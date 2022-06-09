@@ -1,6 +1,6 @@
 # ROS2Web
 
-ROS2Web creates Web user interfaces by combining user interface components and writing data bindings. It also provides an API that extends the ros2cli and ROS2 launch, making it easy to incorporate ROS2 system functions such as getting a package list and executing packages into their development applications. ROS2Web can also create a Web API by adding a specified decorator to a function.
+ROS2Web is a Web application framework enabling ROS users to develop web applications using ROS2 functions easily. ROS2Web creates Web user interfaces by combining user interface components and writing data bindings. It also provides an API that extends the ros2cli and ROS2 launch, making it easy to incorporate ROS2 system functions such as getting a package list and executing packages into their development applications. ROS2Web can also create a Web API by adding a specified decorator to a function.
 
 # Install
 ```zsh

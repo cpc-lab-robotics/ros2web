@@ -38,6 +38,6 @@ async def package_names(self):
     return await self.ros2.pkg.list()
 ```
 
-### User Interface Examples
+### Examples
 
-https://github.com/cpc-lab-robotics/ros2web_graph
+- https://github.com/cpc-lab-robotics/ros2web_graph

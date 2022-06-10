@@ -2,7 +2,12 @@
 
 ROS2Web is a web application framework enabling ROS users to develop web applications using ROS2 functions easily. ROS2Web creates web user interfaces by combining user interface components and writing data bindings. It also provides an API that extends the ros2cli and ROS2 launch, making it easy to incorporate ROS2 system functions such as getting a package list and executing packages into their development applications. ROS2Web can also create a Web API by adding a specified decorator to a function.
 
-# Install
+
+
+## Install
+
+ROS2Web requires ROS2 Galactic and Python 3.8 or higher.
+
 ```zsh
 pip install aiohttp dacite tinydb hashids
 
@@ -14,7 +19,7 @@ source /opt/ros/galactic/setup.zsh
 . ./install/local_setup.zsh
 ```
 
-# Usage
+## Usage
 
 ```zsh
 cd ros2_ws/src

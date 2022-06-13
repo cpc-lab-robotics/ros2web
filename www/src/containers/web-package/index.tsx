@@ -1,44 +1,44 @@
 import { useMemo, useEffect } from "react";
 
-import { useParams } from "react-router-dom";
+import { useParams, useSearchParams} from "react-router-dom";
 import { useWebPackageState } from "@/services/api";
-import createLayout from "../create-layout";
 
 import { WidgetEvent } from "@/containers/widgets/types";
-import { UIData } from "./types";
 
-export default function WebPackage() {
-  const { webPackageName } = useParams();
+import createPage from "./create-page";
+
+
+export default function WebPackage(){
+  const params = useParams();
+  const { webPackageName } = params;
+
+  let [searchParams] = useSearchParams();
   if (webPackageName === undefined) return <></>;
-
-  const [info, state, setState, emit] = useWebPackageState(webPackageName);
+  
+  let path = params["*"] || '';
+  path = path +'?'+ searchParams.toString()
+  const [page, state, setState, emit] = useWebPackageState(webPackageName, path);
 
   const memo = useMemo(() => {
     if (
-      info === undefined ||
-      state === undefined ||
-      info === null ||
-      state === null ||
-      info.ui === undefined
+      page === undefined ||
+      state === undefined
     )
       return <></>;
-    const ui: UIData = info.ui || {};
+    
     const handler = (event: WidgetEvent) => {
       emit(event);
     };
-    if (ui.element !== undefined) {
-      return createLayout(
-        webPackageName,
-        ui.element,
-        ui.bind,
-        state,
-        setState,
-        handler
-      );
-    } else {
-      return <></>;
-    }
-  }, [info, state]);
+    
+    return createPage(
+      page,
+      webPackageName,
+      state,
+      setState,
+      handler
+    );
+    
+  }, [page, state]);
 
   return memo;
 }

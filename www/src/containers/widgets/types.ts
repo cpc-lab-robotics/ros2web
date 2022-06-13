@@ -1,12 +1,8 @@
 import { Dispatch } from "react";
+import DataAdaptor from "../data/adaptor";
 
-import DataAdaptor from "@/containers/data/adaptor";
 
 export type WidgetProps = {
-  webPackageName?: string;
-  bindStateKey?: Record<string, string>;
-  initState?: Record<string, any>;
-  setState?: Dispatch<Record<string, any>>;
   dataAdaptor?: DataAdaptor;
 }
 

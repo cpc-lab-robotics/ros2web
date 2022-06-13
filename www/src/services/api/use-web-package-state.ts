@@ -3,7 +3,7 @@ import React, { Dispatch, SetStateAction } from "react";
 import { useQueryClient, useQuery, useQueries } from "react-query";
 import { WidgetEvent } from "@/containers/widgets/types";
 
-import { getState, getInfo } from "./ros2web";
+import { getState, getPage, Page } from "./ros2web";
 
 type InvalidateEvent = {
   operation: "invalidate";
@@ -25,10 +25,11 @@ type EmitEvent = {
 type WebSocketEvent = InvalidateEvent | UpdateEvent | EmitEvent;
 
 export const useWebPackageState = (
-  webPackageName: string
+  webPackageName: string, 
+  path: string
 ): [
-  Record<string, any>,
-  Record<string, any>,
+  Page | undefined,
+  Record<string, any> | undefined,
   Dispatch<Record<string, any>>,
   Dispatch<WidgetEvent>
 ] => {
@@ -37,8 +38,8 @@ export const useWebPackageState = (
 
   const results = useQueries([
     {
-      queryKey: [webPackageName, "info"],
-      queryFn: () => getInfo(webPackageName),
+      queryKey: [webPackageName, "page"],
+      queryFn: () => getPage(webPackageName, path),
     },
     {
       queryKey: [webPackageName, "state"],
@@ -46,7 +47,7 @@ export const useWebPackageState = (
     },
   ]);
 
-  const { data: info } = results[0];
+  const { data: page } = results[0];
   const { data: state } = results[1];
 
   React.useEffect(() => {
@@ -108,5 +109,5 @@ export const useWebPackageState = (
     websocket.current?.send(JSON.stringify(ev));
   };
 
-  return [info, state, setState, emit];
+  return [page, state, setState, emit];
 };

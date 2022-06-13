@@ -3,5 +3,8 @@ import { Srv } from "./interface";
 
 export type Service = {
   name: string;
-  type: Srv;
+  type: string;
+  requestValue?: any;
+  responseValue?: any;
+  descriptor?: Srv;
 } & Data;

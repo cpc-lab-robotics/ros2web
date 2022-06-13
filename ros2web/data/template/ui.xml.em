@@ -1,2 +1,0 @@
-<ThreePane>
-</ThreePane>

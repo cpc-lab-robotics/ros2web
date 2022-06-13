@@ -19,41 +19,30 @@ from ..models.node import Node, NodeInterface
 from ..models.topic import Topic
 from ..models.service import Service
 from ..models.action import Action
-from ..models.interface import Msg, Srv, Act
 from ...utilities import UniqueName
 
 logger = launch.logging.get_logger(__file__)
 
 
 def _topic(topics: List[TopicInfo]) -> List[Topic]:
-    def create_msg(type):
-        t = type.split('/')
-        return Msg(name=t[2], package_name=t[0])
-    
-    return [Topic(id=f'topic:{topic.name}:{t}', name=topic.name, type=create_msg(t))
+    return [Topic(name=topic.name, type=type)
             for topic in topics
-            for t in topic.types
-            if t.startswith('rcl_interfaces') is False]
+            for type in topic.types
+            if type.startswith('rcl_interfaces') is False]
 
 
 def _service(topics: List[TopicInfo]) -> List[Service]:
-    def create_service(type):
-        t = type.split('/')
-        return Srv(name=t[2], package_name=t[0])
-
-    return [Service(name=topic.name, type=create_service(t))
+    return [Service(name=topic.name, type=type)
             for topic in topics
-            for t in topic.types]
+            for type in topic.types
+            if type.startswith('rcl_interfaces') is False]
 
 
 def _action(topics: List[TopicInfo]) -> List[Action]:
-    def create_action(type):
-        t = type.split('/')
-        return Act(name=t[2], package_name=t[0])
-
-    return [Action(name=topic.name, type=create_action(t))
+    return [Action(name=topic.name, type=type)
             for topic in topics
-            for t in topic.types]
+            for type in topic.types
+            if type.startswith('rcl_interfaces') is False]
 
 
 def _get_node_interface(*, node_names: List[str], include_hidden: bool = False) -> List[NodeInterface]:

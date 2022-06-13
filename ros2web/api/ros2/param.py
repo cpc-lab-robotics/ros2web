@@ -97,9 +97,10 @@ def _get_floating_point_range(values):
 
 
 def _convert_descriptor(descriptor: ParameterDescriptor) -> ParamDescriptor:
+    
     descriptor_data = {
         'name': descriptor.name,
-        'type': _get_param_type(descriptor.type),
+        'type': _get_param_type(descriptor.type).value,
         'description': descriptor.description,
         'additional_constraints': descriptor.additional_constraints,
         'read_only': descriptor.read_only,
@@ -135,7 +136,7 @@ async def _set_param(*, node_name,
 
 async def _get_param(*, node_name: str,
                      parameter_names: List[str],
-                     describe: bool = False,
+                     describe: bool,
                      ros_node: Node) -> Optional[List[Param]]:
 
     client = ros_node.create_client(
@@ -154,6 +155,7 @@ async def _get_param(*, node_name: str,
         raise RuntimeError('Failed to get parameters.')
 
     parameters = []
+    
     if describe:
         client2 = ros_node.create_client(
             DescribeParameters, f'{node_name}/describe_parameters')
@@ -173,13 +175,15 @@ async def _get_param(*, node_name: str,
         for descriptor, value in zip(response2.descriptors, response.values):
             param_descriptor = _convert_descriptor(descriptor)
             param_value = _get_param_value(value)
-            param = Param(name=param_descriptor.name,
+            
+            
+            param = Param(node_name=node_name, name=param_descriptor.name,
                           value=param_value, descriptor=param_descriptor)
             parameters.append(param)
     else:
         for param_name, value in zip(parameter_names, response.values):
             param_value = _get_param_value(value)
-            param = Param(name=param_name, value=param_value)
+            param = Param(node_name=node_name, name=param_name, value=param_value)
             parameters.append(param)
     return parameters
 
@@ -251,8 +255,9 @@ class ROS2ParamAPI:
 
     async def get(self, node_name: str,
                   parameter_names: List[str],
-                  describe: bool = False
+                  describe: bool = True
                   ) -> List[Param]:
+        
         return await _get_param(
                 node_name=node_name,
                 parameter_names=parameter_names,

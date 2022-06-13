@@ -16,6 +16,7 @@ from launch.utilities import is_a_subclass
 from ..events import ExecutionWebPackage
 from .system_service import SystemService
 from ...wp.wp_process import WebPackageProcess
+from ...extensions import extensions
 
 
 class WebPackageManager(OpaqueCoroutine):
@@ -67,10 +68,18 @@ class WebPackageManager(OpaqueCoroutine):
         self.__receive_loop_task = self.__loop.create_task(self.__receive_loop())
 
         self.__load_entry_points()
-        # TODO: enableにした Web Package のみ activation を行う。
         self.__activation_web_packages()
 
     def __load_entry_points(self):
+        
+        for extension in extensions:
+            self.__web_package_module_dict[extension.name] = {
+                'name': extension.name,
+                'class_name': extension.class_name,
+                'module_name': extension.module_name,
+                'location': extension.location
+            }
+            
         for entry_point in pkg_resources.iter_entry_points('ros2web.package'):
             try:
                 class_name = entry_point.attrs[0]
@@ -81,10 +90,11 @@ class WebPackageManager(OpaqueCoroutine):
                     'location': entry_point.dist.location
                 }
             except Exception as e:
-                self.__logger.error(
-                    "Failed to load '{}'. ({})".format(entry_point.name, e))
+                self.__logger.error("[{}]:{}".format(entry_point.name, e))
 
     def __activation_web_packages(self):
+        # TODO: Only the Web Package that has been enabled is processed.
+        
         service: SystemService = self.__launch_context.\
             get_locals_as_dict().get("system_service")
 

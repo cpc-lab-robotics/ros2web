@@ -2,6 +2,8 @@ from typing import Any, List, Dict, Optional
 
 from dataclasses import dataclass, field
 
+from .data import Data
+
 
 # https://www.ros.org/reps/rep-0149.html
 
@@ -36,11 +38,12 @@ class Url:
 
 
 @dataclass
-class PackageManifest:
+class PackageManifest(Data):
     filename: str
     package_format: int
-
+    
     name: str
+    
     version: str  # MAJOR.MINOR.PATCH
     description: str
     maintainers: List[Person] = field(default_factory=list)
@@ -64,8 +67,7 @@ class PackageManifest:
     
     exports: Optional[List[Export]] = field(default=None)
 
-@dataclass
-class Package:
-    name: str
-    executables: Optional[List[str]] = field(default=None)
-    manifest: Optional[List[PackageManifest]] = field(default=None)
+    def __post_init__(self):
+        self.id = self.name
+    
+    

@@ -1,8 +1,6 @@
 import axios from "axios";
 
-const baseURL = "/api";
-// const baseURL = 'http://localhost:8080/api'
-
+const baseURL = "/api/ros2web";
 export const instance = axios.create({
   baseURL,
 });

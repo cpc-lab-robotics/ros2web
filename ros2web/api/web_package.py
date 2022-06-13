@@ -1,11 +1,10 @@
-from ctypes import Union
-from typing import Dict, List, Optional
-from typing import TYPE_CHECKING
+from typing import Dict, List, Any
+from typing import TYPE_CHECKING, Optional, NamedTuple
 import asyncio
 
 from rclpy.node import Node
 from .ros2 import ROS2API
-from .api_def import APIDefinition
+from .route_table_def import RouteTableDef
 
 if TYPE_CHECKING:
     from ..wp.wp_api import WebPackageAPI  # noqa: F401
@@ -13,19 +12,17 @@ if TYPE_CHECKING:
 
 class WebPackage:
 
-    def __init__(self, *, init_state: Dict, 
-                 xml: Optional[str] = None,
-                 api_def: Optional[APIDefinition] = None,
+    def __init__(self, *, init_state: Dict,
+                 routes: Optional[RouteTableDef] = None,
                  ) -> None:
         self.__init_state = init_state
         self.__api: 'WebPackageAPI' = None
-        self.__xml = xml
-        self.__api_def = api_def
+        self.__routes = routes
 
     def _set_api(self, api: 'WebPackageAPI'):
-        api.init(web_package=self, state=self.__init_state,
-                 xml=self.__xml,
-                 api_def=self.__api_def)
+        api.init(web_package=self,
+                 state=self.__init_state,
+                 routes=self.__routes)
         self.__api = api
 
     def bind(self, widget_id, event_type, handler):

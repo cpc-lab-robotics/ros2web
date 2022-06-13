@@ -1,20 +1,11 @@
 import React from "react";
 
-import _Plot, { PlotParams } from "react-plotly.js";
+import Plotly, { PlotParams } from "react-plotly.js";
 
-// export type Point = {
-//   dataIndex: number;
-//   id: number;
-//   x?: number;
-//   y?: number;
-//   z?: number;
-// };
-
-export interface PlotProps {
+export type PlotProps = {
   data?: any[];
   layout?: Record<string, any>;
   config?: any;
-  // merge?: boolean;
   style?: any;
 }
 
@@ -61,16 +52,8 @@ class Plot extends React.Component<PlotProps, PlotState> {
     const props = {
       ...(style ? {style} : {})
     }
-    // const handlers: Record<string, any> = {};
-    // Object.entries(this.props).forEach(([key, value]) => {
-    //   let match = key.match(/^on/);
-
-    //   if (match && !["onInitialized", "onUpdate"].includes(key)) {
-    //     handlers[key] = value;
-    //   }
-    // });
     return (
-      <_Plot
+      <Plotly
         useResizeHandler
         data={this.state.data}
         layout={this.state.layout}

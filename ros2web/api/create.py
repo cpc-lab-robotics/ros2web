@@ -89,8 +89,8 @@ def _create_web_package(web_package_name, destination_directory):
 
     package_data_directory = _create_folder('data', package_src_directory)
 
-    _create_template_file('ui.xml.em', package_data_directory,
-                          'ui.xml', {})
+    _create_template_file('config.yml.em', package_data_directory,
+                          'config.yml', {})
 
     _create_folder('public', package_data_directory)
 

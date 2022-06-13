@@ -4,4 +4,5 @@ from typing import Optional
 
 @dataclass
 class Data:
-    id: str
+    id: str = field(init=False)
+    

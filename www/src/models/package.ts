@@ -1,10 +1,5 @@
 import {Data} from ".";
 
-export type Package = {
-  name: string;
-  executables: string[];
-} & Data;
-
 export type PackageManifest = {
   filename: string;
   packageFormat: number;

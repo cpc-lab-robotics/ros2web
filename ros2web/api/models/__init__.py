@@ -7,16 +7,16 @@ from ...utilities.re import snake_to_camle, camel_to_snake
 from ...utilities.converter import props_to_camel, props_to_snake
 
 from .node import Node
-from .package import Package
+from .package import PackageManifest
 from .param import Param
-from .interface import Srv, Msg, Act
+from .interface import Srv, Msg, Act, Field
 from .topic import Topic
 from .service import Service
 from .action import Action
 
 CLASS_MAP = {
     'Node': Node,
-    'Package': Package,
+    'PackageManifest': PackageManifest,
     'Param': Param,
     'Msg': Msg,
     'Srv': Srv,
@@ -25,6 +25,23 @@ CLASS_MAP = {
     'Service': Service,
     'Action': Action,
 }
+
+def dict_to_field(data):
+    if isinstance(data, dict):
+        return [Field(name=name, type=dict_to_field(f)) for name, f in data.items()]
+    else:
+        if isinstance(data, bytes):
+            type = 'bytes'
+        if isinstance(data, int):
+            type = 'int'
+        elif isinstance(data, float):
+            type = 'float'
+        elif isinstance(data, str):
+            type = 'str'
+        else:
+            type = 'unkown'
+        return type
+    
 
 def custom_asdict_factory(data):
     def convert_value(obj):
@@ -41,7 +58,7 @@ def dataclasses_to_dict(data):
         return [dataclasses_to_dict(v) for v in data]
     else:
         if dataclasses.is_dataclass(data):
-            data = dataclasses.asdict(data, dict_factory=custom_asdict_factory)
+            data = dataclasses.asdict(data)
         return data
 
 def model_to_dict(data):
@@ -54,7 +71,7 @@ def model_to_dict(data):
             data_class_name = type(data).__name__
             
             if CLASS_MAP.get(data_class_name):
-                data = dataclasses.asdict(data, dict_factory=custom_asdict_factory)
+                data = dataclasses.asdict(data)
                 data = props_to_camel(data)
                 data["__name___"] = data_class_name
                 

@@ -9,4 +9,5 @@ from .data import Data
 @dataclass
 class Topic(Data):
     name: str
-    type: Msg
+    type: str
+    

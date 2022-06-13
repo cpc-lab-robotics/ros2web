@@ -2,6 +2,9 @@ from dataclasses import dataclass, field
 from typing import Optional
 from typing import List, Any
 from enum import Enum
+import time
+
+from .data import Data
 
 
 class ParamType(Enum):
@@ -34,7 +37,7 @@ class IntegerRange:
 @dataclass
 class ParamDescriptor:
     name: str
-    type: ParamType
+    type: str
     description: str
 
     additional_constraints: Optional[str] = field(default=None)
@@ -43,9 +46,17 @@ class ParamDescriptor:
     floating_point_range: Optional[FloatingPointRange] = field(default=False)
     integer_range: Optional[IntegerRange] = field(default=False)
 
+    def paramType(self)->ParamType:
+        return ParamType(self.type)
+        
 
 @dataclass
-class Param:
+class Param(Data):
+    node_name: str
     name: str
     value: Any
     descriptor: Optional[ParamDescriptor] = field(default=None)
+
+    def __post_init__(self):
+        self.id = f"{self.node_name}:{self.name}"
+        

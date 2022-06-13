@@ -38,11 +38,24 @@ http://localhost:8080/api/example/package_names
 The only program to be written for this WebAPI is the following.
 
 ```python
-@api_def.get("/package_names")
+@routes.get("/package_names")
 async def package_names(self):
     return await self.ros2.pkg.list()
 ```
 
+You can use the Web UI at the following URL.
+
+http://localhost:8080/ros2web/example
+
+
+Press the button to publish the message.
+You can check the following commands.
+
+```zsh
+ros2 topic echo topic
+```
+
+
 ### Examples
 
-- https://github.com/cpc-lab-robotics/ros2web_graph
+- https://github.com/cpc-lab-robotics/ros2web_turtlesim

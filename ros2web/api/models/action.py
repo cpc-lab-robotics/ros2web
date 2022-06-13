@@ -8,4 +8,4 @@ from .interface import Act
 @dataclass
 class Action:
     name: str
-    type: Act
+    type: str

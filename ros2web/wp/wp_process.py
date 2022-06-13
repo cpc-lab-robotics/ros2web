@@ -34,18 +34,13 @@ def process_worker(*, name: str, class_name: str, module_name: str, location: st
                    receive_queue: JoinableQueue, send_queue: JoinableQueue,
                    api_conn: Connection, service_conn: Connection):
     try:
-        logger = launch.logging.get_logger(f'process_worker[{name}]')
-
-        def exception_handler(self, loop, context):
-            nonlocal logger
-            logger.error(context)
-
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        loop.set_exception_handler(exception_handler)
-
+        module = importlib.import_module(module_name, location)
+        web_package: WebPackage = getattr(module, class_name)()
         is_running = True
-
+        logger = launch.logging.get_logger(f'process_worker[{name}]')
+        
         def receive_data(queue: JoinableQueue, api: WebPackageAPI):
             nonlocal is_running
             while is_running:
@@ -67,9 +62,20 @@ def process_worker(*, name: str, class_name: str, module_name: str, location: st
                 except EOFError:
                     pass
 
-        module = importlib.import_module(module_name, location)
-        web_package: WebPackage = getattr(module, class_name)()
-
+        def exception_handler(self, loop, context):
+            nonlocal logger
+            logger.error(context)
+        
+        async def catch_exception(awaitable):
+            nonlocal logger
+            try:
+                return await awaitable
+            except Exception as e:
+                logger.error("startup: ".format(e))
+                
+        
+        loop.set_exception_handler(exception_handler)
+        
         ros_executor = ROSExecutor(node_name=f"ros2web_{name}",
                                    namespace=None,
                                    args=None,
@@ -80,19 +86,12 @@ def process_worker(*, name: str, class_name: str, module_name: str, location: st
                             ros2_api=ros2_api,
                             send_queue=send_queue,
                             loop=loop)
+        
         web_package._set_api(api)
-
         loop.run_in_executor(
             None, receive_data, receive_queue, api)
         loop.run_in_executor(
             None, call_api, api_conn, api)
-
-        async def catch_exception(awaitable):
-            nonlocal logger
-            try:
-                return await awaitable
-            except Exception as e:
-                logger.error("startup: ".format(e))
         loop.create_task(catch_exception(web_package.on_startup()))
         loop.run_forever()
     except KeyboardInterrupt:
@@ -207,27 +206,21 @@ class WebPackageProcess:
             self.__logger.error("[call_api] ValueError: {}".format(e))
         return response
 
-    async def call_api(self, *, request_method: str, path: str, params: Optional[Dict] = None):
-        if path.startswith('_'):
-            return None
-
+    async def call_api(self, *, 
+                       request_method: str, 
+                       path: str, 
+                       search_params: Optional[Dict] = None,
+                       json_payload: Optional[Dict] = None):
         request = {
             'request_method': request_method,
             'path': path,
-            'params': params
-        }
-        return await self.__loop.run_in_executor(None, self.__call_api, request)
-
-    async def get_info(self):
-        request = {
-            'request_method': 'get',
-            'path': '_get_info',
+            'search_params': search_params,
+            'json_payload': json_payload
         }
         return await self.__loop.run_in_executor(None, self.__call_api, request)
 
     async def get_state(self):
         request = {
-            'request_method': 'get',
-            'path': '_get_state',
+            'web_api_method': 'get_state'
         }
         return await self.__loop.run_in_executor(None, self.__call_api, request)

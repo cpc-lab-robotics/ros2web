@@ -1,8 +1,9 @@
 import { Data } from ".";
 
 export type Field = {
-  name: string;
   type: string;
+  name: string;
+  nested?: Field[];
 };
 
 export type Msg = {

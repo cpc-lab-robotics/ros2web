@@ -1,43 +1,57 @@
 import importlib.resources
-import launch.logging
+import yaml
 
 from ros2web.api import WebPackage
-from ros2web.api import APIDefinition
+from ros2web.api import RouteTableDef, Request
+from ros2web.api import WidgetEvent
 
+import launch.logging
+from std_msgs.msg import String
 
 with importlib.resources.path("@package_name", "data") as path:
-    UI_FILE_PATH = path.joinpath("ui.xml")
+    CONFIG_FILE_PATH = path.joinpath("config.yml")
 
-api_def = APIDefinition()
+routes = RouteTableDef()
+
 
 class @inheritance_name:
 
     def __init__(self) -> None:
-        init_state = {}
-
+        init_state = {
+            'button_label': 'Hello'
+        }
+        
         super().__init__(
             init_state=init_state,
-            xml=UI_FILE_PATH,
-            api_def=api_def,
-            )
+            routes=routes,
+        )
+        self.__config = None
         self.__logger = launch.logging.get_logger('@class_name')
-    
-    @@api_def.get("/package_names")
-    async def package_names(self):
-        return await self.ros2.pkg.list()
+        
+        try:
+            with open(CONFIG_FILE_PATH, 'r') as yml:
+                self.__config = yaml.safe_load(yml)
+        except yaml.YAMLError as e:
+            self.__logger.error(f'(YAML) :{e}')
+        
+        self.__publisher = None
 
-    @@api_def.get("/executables")
-    async def executables(self):
-        return await self.ros2.pkg.executables()
-
-    @@api_def.get("/package/{package_name}")
-    async def package(self, package_name):
-        if package_name:
-            package = await self.ros2.pkg.package(package_name)
-        return package
+    @@routes.page
+    async def page(self, request: Request):
+        return self.__config['page']
 
     async def on_startup(self):
-        pass
+        self.bind("button", "on_click", self.click_handler)
+        self.__publisher = self.ros_node.create_publisher(String, 'topic', 10)
 
     async def on_shutdown(self):
-        pass
+        self.ros_node.destroy_publisher(self.__publisher)
+    
+    async def click_handler(self, event: WidgetEvent):
+        string = String()
+        string.data = "Hello, world"
+        self.__publisher.publish(string)
+        
+    @@routes.get("/package_names")
+    async def package_names(self, request: Request):
+        return await self.ros2.pkg.list()

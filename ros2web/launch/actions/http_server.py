@@ -16,11 +16,20 @@ from .web_package_manager import WebPackageManager
 from ...utilities import get_ip_address
 
 with importlib.resources.path("ros2web", "data") as path:
-    UI_FILE_PATH = path.joinpath("ui", "dist")
+    UI_FILE_PATH = path.joinpath("web", "dist")
 
 
 logger = launch.logging.get_logger('HTTPServer')
 routes = web.RouteTableDef()
+
+
+def get_web_packge_process(request: web.Request):
+    web_package_name = request.match_info['web_package_name']
+    web_package_manager: WebPackageManager = request.app["web_package_manager"]
+    wp_process = web_package_manager.get_web_package_process(web_package_name)
+    if wp_process is None:
+        raise web.HTTPNotFound()
+    return wp_process
 
 
 @routes.get("/")
@@ -28,71 +37,63 @@ async def index_handler(request: web.Request) -> web.StreamResponse:
     return web.FileResponse(os.path.join(UI_FILE_PATH, 'index.html'))
 
 
-@routes.get("/ui")
-async def index_handler(request: web.Request) -> web.StreamResponse:
+@routes.get("/ros2web")
+async def ros2web(request: web.Request) -> web.StreamResponse:
     return web.FileResponse(os.path.join(UI_FILE_PATH, 'index.html'))
 
 
-@routes.get("/ui/{tail:.*}")
-async def index_handler(request: web.Request) -> web.StreamResponse:
+@routes.get("/ros2web/{web_package_name}")
+async def ros2web_package(request: web.Request) -> web.StreamResponse:
+    get_web_packge_process(request)
     return web.FileResponse(os.path.join(UI_FILE_PATH, 'index.html'))
 
 
-@routes.get('/api/{web_package_name}/info')
+@routes.get("/ros2web/{web_package_name}/{tail:.*}")
+async def ros2web_package_tail(request: web.Request) -> web.StreamResponse:
+    get_web_packge_process(request)
+    return web.FileResponse(os.path.join(UI_FILE_PATH, 'index.html'))
+
+
+@routes.get('/api/ros2web/page/{web_package_name}/{tail:.*}')
 async def web_package_info(request: web.Request) -> web.StreamResponse:
+    wp_process = get_web_packge_process(request)
+    path = request.match_info['tail']
+    search_params = request.rel_url.query
+    
+    page_data = await wp_process.call_api(
+        request_method='page',
+        path=path,
+        search_params=dict(search_params),
+    )
+    return web.json_response(page_data)
 
-    web_package_name = request.match_info['web_package_name']
-    web_package_manager: WebPackageManager = request.app["web_package_manager"]
-    wp_process = web_package_manager.get_web_package_process(web_package_name)
-    if wp_process is None:
-        raise web.HTTPNotFound()
-    info = await wp_process.get_info()
-    # logger.info("info: {}".format(info))
-    return web.json_response(info)
 
-
-@routes.get('/api/{web_package_name}/state')
+@routes.get('/api/ros2web/state/{web_package_name}')
 async def web_package_state(request: web.Request) -> web.StreamResponse:
-    web_package_name = request.match_info['web_package_name']
-    web_package_manager: WebPackageManager = request.app["web_package_manager"]
-    wp_process = web_package_manager.get_web_package_process(web_package_name)
-    if wp_process is None:
-        raise web.HTTPNotFound()
-
+    wp_process = get_web_packge_process(request)
     state = await wp_process.get_state()
     return web.json_response(state)
 
 
-@routes.get('/api/{web_package_name}/state/{key}')
+@routes.get('/api/ros2web/state/{web_package_name}/{key}')
 async def web_package_state_key(request: web.Request) -> web.StreamResponse:
-    web_package_name = request.match_info['web_package_name']
+    wp_process = get_web_packge_process(request)
     key = request.match_info['key']
-    web_package_manager: WebPackageManager = request.app["web_package_manager"]
-    wp_process = web_package_manager.get_web_package_process(web_package_name)
-    if wp_process is None:
-        raise web.HTTPNotFound()
-
     state = await wp_process.get_state()
     return web.json_response(state.get(key))
 
 
 @routes.get('/api/{web_package_name}/{tail:.*}')
-async def web_package_extension_api(request: web.Request) -> web.StreamResponse:
-    web_package_name = request.match_info['web_package_name']
+async def web_package_extension_get_api(request: web.Request) -> web.StreamResponse:
+    wp_process = get_web_packge_process(request)
+    
     tail = request.match_info['tail']
-    web_package_name = request.match_info['web_package_name']
-    web_package_manager: WebPackageManager = request.app["web_package_manager"]
-    wp_process = web_package_manager.get_web_package_process(web_package_name)
-    if wp_process is None:
-        raise web.HTTPNotFound()
-
-    params = request.rel_url.query
+    search_params = request.rel_url.query
     result = await wp_process.call_api(
         request_method='get',
         path=tail,
-        params=dict(params),
+        search_params=dict(search_params),
     )
-
     if result is None:
         raise web.HTTPNotFound()
 
@@ -100,20 +101,19 @@ async def web_package_extension_api(request: web.Request) -> web.StreamResponse:
 
 
 @routes.post('/api/{web_package_name}/{tail:.*}')
-async def web_package_extension_api(request: web.Request) -> web.StreamResponse:
-    web_package_name = request.match_info['web_package_name']
+async def web_package_extension_post_api(request: web.Request) -> web.StreamResponse:
+    wp_process = get_web_packge_process(request)
     tail = request.match_info['tail']
-    web_package_name = request.match_info['web_package_name']
-    web_package_manager: WebPackageManager = request.app["web_package_manager"]
-    wp_process = web_package_manager.get_web_package_process(web_package_name)
-    if wp_process is None:
-        raise web.HTTPNotFound()
-
-    params = await request.json()
+    
+    # TODO: Taking the defined API and settings.
+    # byte_payload = await request.read() # returns bytes object with body content.
+    json_payload = await request.json() # Read request body decoded as json
+    # text_payload = await request.text() # Returns str with body content.
+    
     result = await wp_process.call_api(
         request_method='post',
         path=tail,
-        params=dict(params)
+        json_payload=dict(json_payload)
     )
 
     if result is None:
@@ -152,8 +152,9 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
 @routes.get("/{web_package_name}")
 async def web_package_handler(request: web.Request) -> web.StreamResponse:
     web_package_name = request.match_info['web_package_name']
+    wp_process = get_web_packge_process(request)
 
-    # TODO: web packageが提供するリソースを提示
+    # TODO: Handling package resources
     return web.Response(text=web_package_name)
 
 

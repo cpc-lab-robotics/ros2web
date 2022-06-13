@@ -1,10 +1,11 @@
-from typing import Dict, List, Set
-from typing import Optional, Union, Iterable, Callable
+from typing import Any, Dict, List, Set
+from typing import Optional, Union, Iterable, Callable, NamedTuple
 from typing import TYPE_CHECKING
 
 import asyncio
 from asyncio import AbstractEventLoop
 import threading
+from uuid import uuid4
 import ujson
 import concurrent.futures
 from multiprocessing import JoinableQueue
@@ -13,8 +14,9 @@ from collections import defaultdict
 import launch.logging
 from rclpy.node import Node as ROSNode
 
+from ..api.event import WidgetEvent
 from ..api.ros2 import ROS2API
-from ..api.api_def import APIDefinition
+from ..api.route_table_def import RouteTableDef, Request
 from ..api.models import model_to_dict, dict_to_model, dataclasses_to_dict
 from ..utilities.ui import create_element
 
@@ -40,7 +42,7 @@ class WebPackageAPI:
         self.__lock = threading.Lock()
         self.__reload = False
         self.__xml = None
-        self.__api_def: APIDefinition = None
+        self.__routes: RouteTableDef = None
         self.__name = name
         self.__ros2_api = ros2_api
         self.__web_package = None
@@ -54,15 +56,14 @@ class WebPackageAPI:
                 self.__state[k] = v
             # self.__copy_state = ujson.loads(ujson.dumps(self.__state))
 
-    def init(self, *, web_package: 'WebPackage', state: Dict,
-             xml: Optional[str] = None,
-             api_def: Optional[APIDefinition] = None):
+    def init(self, *, web_package: 'WebPackage',
+             state: Dict,
+             routes: Optional[RouteTableDef] = None):
 
         self.__web_package = web_package
         self.__state = state
         # self.__copy_state: Dict = ujson.loads(ujson.dumps(self.__state))
-        self.__api_def = api_def
-        self.load_xml(xml)
+        self.__routes = routes
 
     def set_receive_data(self, data, timeout: float = 3.0) -> None:
         operation = data.get('operation')
@@ -73,12 +74,15 @@ class WebPackageAPI:
             event_type = event.get("type")
             event_id = f"{widget_id}:{event_type}"
             value = widget_event.get('value')
-            data = dict_to_model(value)
+            model_value = dict_to_model(value)
+            
+            new_widget_event = WidgetEvent(widget_id, event_type, model_value)
+            
             handler = self.__handlers.get(event_id)
             if handler is not None:
                 try:
                     future = asyncio.run_coroutine_threadsafe(
-                        handler(event, data), self.__loop)
+                        handler(new_widget_event), self.__loop)
                     future.result(timeout=timeout)
                 except concurrent.futures.TimeoutError:
                     self.__logger.error(
@@ -105,43 +109,49 @@ class WebPackageAPI:
             self.__ros2_api._emit_event(event)
 
     def call(self, data, timeout: float = 3.0):
-        path: str = data.get('path')
-        kwargs: Dict = data.get('params', {})
         response = None
-
-        if path.startswith("_"):
+        web_api_method: str = data.get('web_api_method')
+        if web_api_method is not None:
+            kwargs: Dict = data.get('kwargs', {})
             try:
-                method_name = path[1:]
-                method = getattr(self, method_name, None)
+                method = getattr(self, web_api_method, None)
                 if method is None:
                     return None
                 response = method(**kwargs)
             except Exception as e:
-                self.__logger.error("call_api[{}]: {}".format(method_name, e))
-
+                self.__logger.error("call[{}]: {}".format(web_api_method, e))
             return response
         else:
-            if self.__api_def is None:
+            if self.__routes is None:
                 return None
             request_method: str = data.get('request_method')
-            method_name, params = self.__api_def.get_method_name(
+            path: str = data.get('path')
+            search_params: Dict = data.get('search_params', {})
+            json_payload: Dict = data.get('json_payload', {})
+
+            method_name, params = self.__routes.get_method_name(
                 request_method=request_method,
                 path=path,
             )
-            kwargs = {**kwargs, **params}
-            method = getattr(self.__web_package, method_name, None)
+            request = Request(
+                match_params=params,
+                search_params=search_params,
+                json_payload=json_payload
+            )
 
+            method = getattr(self.__web_package, method_name, None)
             if method is None:
                 return None
-
             try:
                 future = asyncio.run_coroutine_threadsafe(
-                    getattr(self.__web_package, method_name)(**kwargs), self.__loop)
+                    getattr(self.__web_package, method_name)(request), self.__loop)
                 response = future.result(timeout=timeout)
-                response = dataclasses_to_dict(response)
+                if request_method == 'page':
+                    response = self.__init_page(response)
+                else:
+                    response = dataclasses_to_dict(response)
             except concurrent.futures.TimeoutError:
-                self.__logger.error(
-                    'The coroutine took too long, cancelling the task...')
+                self.__logger.error('TimeoutError')
                 future.cancel()
             except Exception as e:
                 self.__logger.error('call_api[{}]: {}'.format(method_name, e))
@@ -154,31 +164,39 @@ class WebPackageAPI:
                 _state[key] = model_to_dict(value)
         return _state
 
-    def get_info(self):
-        if self.__reload:
-            self.load_xml(self.__xml, reload=self.__reload)
+    def __add_key_widget(self, widgets: List):
+        for widget in widgets:
+            if isinstance(widget, dict):
+                items = list(widget.values())
+                if len(items) > 0:
+                    widget_el = items[0]
+                    if isinstance(widget_el, dict):
+                        widget_el['key'] = str(uuid4())
+                        _widgets = widget_el.get('widgets', [])
+                        self.__add_key_widget(_widgets)
 
+    def __add_key(self, settings: Dict):
+        if isinstance(settings, dict):
+            layout = settings.get('layout')
+            if isinstance(layout, dict):
+                items = list(layout.values())
+                if len(items) > 0:
+                    layout_el = items[0]
+                    if isinstance(layout_el, dict):
+                        layout_el['key'] = str(uuid4())
+            widgets = settings.get('widgets', [])
+            self.__add_key_widget(widgets)
+
+    def __init_page(self, ui: Dict):
         bind = {}
         for k, v in self.__bind.items():
             bind[k] = list(v)
+        self.__add_key(ui)
 
-        info = {}
-        info['ui'] = {
-            'element': self.__ui_element,
+        return {
+            'ui': ui,
             'bind': bind
         }
-        return info
-
-    def load_xml(self, xml, *, reload=True):
-        self.__reload = reload
-        self.__xml = xml
-        try:
-            self.__ui_element = create_element(name=self.__name, xml=xml)
-        except Exception as e:
-            self.__logger.error("{}".format(e))
-
-    def set_api_def(self, api_def: APIDefinition):
-        self.__api_def = api_def
 
     def bind(self, widget_id, event_type, handler):
         event_id = f"{widget_id}:{event_type}"
@@ -195,6 +213,7 @@ class WebPackageAPI:
 
         for key, value in state.items():
             _state[key] = model_to_dict(value)
+
         event = {
             'operation': "update",
             'webPackageName': self.__name,

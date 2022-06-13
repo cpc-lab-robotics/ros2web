@@ -9,7 +9,7 @@ ROS2Web is a web application framework enabling ROS users to develop web applica
 ROS2Web requires ROS2 Galactic and Python 3.8 or higher.
 
 ```zsh
-pip install aiohttp dacite tinydb hashids
+pip install aiohttp dacite tinydb
 
 mkdir -p ros2_ws/src
 cd ros2_ws/src

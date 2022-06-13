@@ -6,7 +6,6 @@ import asyncio
 from asyncio import AbstractEventLoop
 import threading
 from uuid import uuid4
-import ujson
 import concurrent.futures
 from multiprocessing import JoinableQueue
 from collections import defaultdict
@@ -54,7 +53,6 @@ class WebPackageAPI:
         with self.__lock:
             for k, v in data.items():
                 self.__state[k] = v
-            # self.__copy_state = ujson.loads(ujson.dumps(self.__state))
 
     def init(self, *, web_package: 'WebPackage',
              state: Dict,
@@ -62,7 +60,6 @@ class WebPackageAPI:
 
         self.__web_package = web_package
         self.__state = state
-        # self.__copy_state: Dict = ujson.loads(ujson.dumps(self.__state))
         self.__routes = routes
 
     def set_receive_data(self, data, timeout: float = 3.0) -> None:

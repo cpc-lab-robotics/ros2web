@@ -17,7 +17,7 @@ from ..api.event import WidgetEvent
 from ..api.ros2 import ROS2API
 from ..api.route_table_def import RouteTableDef, Request
 from ..api.models import model_to_dict, dict_to_model, dataclasses_to_dict
-from ..utilities.ui import create_element
+
 
 if TYPE_CHECKING:
     from ..api.web_package import WebPackage

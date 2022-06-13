@@ -14,6 +14,7 @@ pip install aiohttp dacite tinydb
 mkdir -p ros2_ws/src
 cd ros2_ws/src
 git clone https://github.com/cpc-lab-robotics/ros2web.git
+cd ..
 colcon build --symlink-install
 source /opt/ros/galactic/setup.zsh
 . ./install/local_setup.zsh

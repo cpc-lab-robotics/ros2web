@@ -8,7 +8,7 @@ ROS2Web is a web application framework enabling ROS users to develop web applica
 
 ROS2Web requires ROS2 Galactic and Python 3.8 or higher.
 
-```zsh
+```bash
 pip install aiohttp dacite tinydb
 
 mkdir -p ros2_ws/src
@@ -16,18 +16,18 @@ cd ros2_ws/src
 git clone https://github.com/cpc-lab-robotics/ros2web.git
 cd ..
 colcon build --symlink-install
-source /opt/ros/galactic/setup.zsh
-. ./install/local_setup.zsh
+source /opt/ros/galactic/setup.bash
+. ./install/local_setup.bash
 ```
 
 ## Usage
 
-```zsh
+```bash
 cd ros2_ws/src
 ros2 web create example
 cd ..
 colcon build --symlink-install
-. ./install/local_setup.zsh
+. ./install/local_setup.bash
 ros2 web server
 ```
 

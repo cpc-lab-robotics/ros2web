@@ -16,7 +16,7 @@ from .web_package_manager import WebPackageManager
 from ...utilities import get_ip_address
 
 with importlib.resources.path("ros2web", "data") as path:
-    UI_FILE_PATH = path.joinpath("web", "dist")
+    UI_FILE_PATH = path.joinpath("ui")
 
 
 logger = launch.logging.get_logger('HTTPServer')
@@ -273,6 +273,8 @@ class HTTPServer(OpaqueCoroutine):
             await completed_future
         except asyncio.CancelledError:
             pass
+        except Exception as e:
+            logger.error(e)
         finally:
             await self.__runner.cleanup()
 

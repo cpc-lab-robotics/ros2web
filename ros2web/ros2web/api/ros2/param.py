@@ -7,6 +7,7 @@ from asyncio import AbstractEventLoop
 
 import rclpy
 import rclpy.parameter
+from rclpy.parameter import Parameter as RCLPY_Parameter
 from rclpy.node import Node
 from rcl_interfaces.msg import IntegerRange
 from rcl_interfaces.msg import FloatingPointRange
@@ -37,6 +38,19 @@ PARAM_TYPE = {
     ParameterType.PARAMETER_DOUBLE_ARRAY: ParamType.DOUBLE_ARRAY,
     ParameterType.PARAMETER_STRING_ARRAY: ParamType.STRING_ARRAY,
     ParameterType.PARAMETER_NOT_SET: ParamType.NOT_SET,
+}
+
+RCLPY_PARAM_TYPE = {
+    ParamType.BOOL: RCLPY_Parameter.Type.BOOL,
+    ParamType.INTEGER: RCLPY_Parameter.Type.INTEGER,
+    ParamType.DOUBLE: RCLPY_Parameter.Type.DOUBLE,
+    ParamType.STRING: RCLPY_Parameter.Type.STRING,
+    ParamType.BYTE_ARRAY: RCLPY_Parameter.Type.BYTE_ARRAY,
+    ParamType.BOOL_ARRAY: RCLPY_Parameter.Type.BOOL_ARRAY,
+    ParamType.INTEGER_ARRAY: RCLPY_Parameter.Type.INTEGER_ARRAY,
+    ParamType.DOUBLE_ARRAY: RCLPY_Parameter.Type.DOUBLE_ARRAY,
+    ParamType.STRING_ARRAY: RCLPY_Parameter.Type.STRING_ARRAY,
+    ParamType.NOT_SET: RCLPY_Parameter.Type.NOT_SET,
 }
 
 PARAM_PROP = {
@@ -123,15 +137,15 @@ async def _set_param(*, node_name,
     client = ros_node.create_client(
         SetParameters, f'{node_name}/set_parameters')
 
-    ready = client.wait_for_service(timeout_sec=5.0)
+    ready = client.wait_for_service(timeout_sec=1.0)
     if not ready:
         raise RuntimeError('Wait for service timed out')
 
     response = await client.call_async(request)
 
     ros_node.destroy_client(client)
-
-    return response
+    
+    return response.results
 
 
 async def _get_param(*, node_name: str,
@@ -141,7 +155,7 @@ async def _get_param(*, node_name: str,
 
     client = ros_node.create_client(
         GetParameters, f'{node_name}/get_parameters')
-    ready = client.wait_for_service(timeout_sec=5.0)
+    ready = client.wait_for_service(timeout_sec=1.0)
     if not ready:
         raise RuntimeError('Wait for service timed out')
     request = GetParameters.Request()
@@ -160,7 +174,7 @@ async def _get_param(*, node_name: str,
         client2 = ros_node.create_client(
             DescribeParameters, f'{node_name}/describe_parameters')
 
-        ready2 = client2.wait_for_service(timeout_sec=5.0)
+        ready2 = client2.wait_for_service(timeout_sec=1.0)
         if not ready2:
             raise RuntimeError('Wait for service timed out')
 
@@ -195,7 +209,7 @@ async def _get_param_descriptor(*, node_name: str,
     client = ros_node.create_client(
         DescribeParameters, f'{node_name}/describe_parameters')
 
-    ready = client.wait_for_service(timeout_sec=5.0)
+    ready = client.wait_for_service(timeout_sec=1.0)
     if not ready:
         raise RuntimeError('Wait for service timed out')
 
@@ -222,8 +236,10 @@ async def _get_param_names(*, node_name,
                            ros_node: Node) -> ListParametersResult:
     service_name = f'{node_name}/list_parameters'
     client = ros_node.create_client(ListParameters, service_name)
-    ready = client.wait_for_service(timeout_sec=5.0)
+    
+    ready = client.wait_for_service(timeout_sec=1.0)
     if not ready:
+        ros_node.destroy_client(client)
         raise RuntimeError('Wait for service timed out')
 
     request = ListParameters.Request()
@@ -233,6 +249,8 @@ async def _get_param_names(*, node_name,
     response = await client.call_async(request)
     ros_node.destroy_client(client)
     return response.result
+
+
 
 
 class ROS2ParamAPI:
@@ -257,13 +275,17 @@ class ROS2ParamAPI:
                   parameter_names: List[str],
                   describe: bool = True
                   ) -> List[Param]:
-        
-        return await _get_param(
+        try:
+            return await _get_param(
                 node_name=node_name,
                 parameter_names=parameter_names,
                 describe=describe,
                 ros_node=self.__ros_node
             )
+        except Exception as e:
+            self.__logger.error(e)
+        return None
+        
 
     async def describe(self, node_name: str,
                        parameter_names: List[str]

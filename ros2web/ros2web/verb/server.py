@@ -1,15 +1,16 @@
 import os
-
+import os.path
 import asyncio
 import launch.logging
 from launch import LaunchService, LaunchDescription
 from ros2cli.verb import VerbExtension
 
-from ros2web.api.create import create_config_directory
+from ros2web.api.create_config import create_config_directory
 from ..db.web import ROS2WebDB, ROS2WebDBException
+
 from ..launch.actions import SystemService
 from ..launch.actions import HTTPServer
-from ..launch.actions import WebPackageManager
+from ..launch.actions import PluginManager
 from ..utilities import logging_screen_handler_remover, logging_logfile_handler_remover
 
 
@@ -27,31 +28,30 @@ class ServerVerb(VerbExtension):
 
         parser.add_argument(
             '--destination-directory',
-            default=os.curdir,
+            default=os.path.expanduser('~'),
             help='Directory where to create the config directory')
 
     def main(self, *, args):
         self.__logger = launch.logging.get_logger('server')
 
         try:
-            # config_directory = create_config_directory(
-            #     args.destination_directory)
-            # db = ROS2WebDB(config_directory)
+            config_directory = create_config_directory(
+                args.destination_directory)
+            db = ROS2WebDB(config_directory)
             system_service = SystemService()
-            web_package_manager = WebPackageManager()
+            plugin_manager = PluginManager()
             http_server = HTTPServer(host=args.bind, port=args.port)
-
             launch_service = LaunchService(argv=[], debug=False)
             launch_service.context.extend_globals({
-                # 'db': db,
+                'db': db,
                 'system_service': system_service,
-                'web_package_manager': web_package_manager
+                'plugin_manager': plugin_manager
             })
             # logging_screen_handler_remover(launch_service._LaunchService__logger)
             # logging_logfile_handler_remover(launch_service._LaunchService__logger)
             launch_description = LaunchDescription([
                 system_service,
-                web_package_manager,
+                plugin_manager,
                 http_server
             ])
             launch_service.include_launch_description(launch_description)

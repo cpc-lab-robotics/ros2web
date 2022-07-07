@@ -11,7 +11,7 @@ class UniqueName:
                 break
             counter += 1
             name = f"{name}:{counter}"
-            if counter > 5:
+            if counter > 100:
                 raise RuntimeError("Too many same names.")
             
         if self.__prefix is None:

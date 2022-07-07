@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING
 from launch.event import Event
 
 if TYPE_CHECKING:
-    from ..actions import Process  # noqa: F401
+    from ..actions import Process # noqa: F401
 
 
 class ExecutionProcess(Event):

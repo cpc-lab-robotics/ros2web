@@ -26,7 +26,7 @@ class Process(Action):
 
     def __init__(self, *, req_id, action: Union[ExecuteProcess, Node],
                  completed_future: asyncio.Future, 
-                 events:List, wp_name:str) -> None:
+                 events:List, plugin_id:str) -> None:
 
         if isinstance(action, ExecuteProcess) is False:
             raise RuntimeError("The action differs from Execute Process.")
@@ -41,7 +41,7 @@ class Process(Action):
         self.__on_stderr_ext = None
         self.__on_stdin_ext = None
 
-        self.__wp_name = wp_name
+        self.__plugin_id = plugin_id
         self.__events = events
 
         self.__id = req_id
@@ -121,8 +121,8 @@ class Process(Action):
         return self.__pid
 
     @property
-    def wp_name(self) -> str:
-        return self.__wp_name
+    def plugin_id(self) -> str:
+        return self.__plugin_id
 
     @property
     def on_start(self):

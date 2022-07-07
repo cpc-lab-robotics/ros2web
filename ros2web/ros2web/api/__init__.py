@@ -1,4 +1,4 @@
 from .route_table_def import RouteTableDef, Request
-from .web_package import WebPackage
-from .ros2 import ProcessEvent
+from .plugin import Plugin
+from .ros2 import ProcessEvent, ROS2API
 from .event import WidgetEvent

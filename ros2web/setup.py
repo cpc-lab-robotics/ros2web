@@ -13,7 +13,7 @@ setup(
         ('share/' + package_name, ['package.xml']),
     ],
     install_requires=['setuptools', 'ros2cli', 'aiohttp',
-                      'dacite', 'tinydb'],
+                      'dacite', 'tinydb', 'watchdog'],
     zip_safe=True,
     maintainer='tygoto',
     maintainer_email='tygoto@me.com',

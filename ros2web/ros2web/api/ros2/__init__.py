@@ -4,10 +4,7 @@ from enum import Enum
 import asyncio
 from asyncio import AbstractEventLoop
 import functools
-import threading
-import dataclasses
 import uuid
-from multiprocessing.connection import Connection
 
 from rclpy.node import Node as ROSNode
 
@@ -49,11 +46,11 @@ class Process:
                  on_stderr: Optional[Callable[[
                      ProcessEvent], Awaitable[None]]] = None,
                  cmd,
-                 call_service, loop: AbstractEventLoop) -> None:
+                 sys_service, loop: AbstractEventLoop) -> None:
         self.__id = req_id
         self.__cmd = cmd
         self.__pid = None
-        self.__call_service = call_service
+        self.__sys_service = sys_service
         self.__loop = loop
 
         self.__event_handler_dict: Dict[str, Callable[[ProcessEvent],
@@ -96,8 +93,8 @@ class Process:
             'method_name': 'shutdown_process',
             'kwargs': {'pid': self.__pid}
         }
-        func = functools.partial(self.__call_service, request)
-        future = self.__loop.run_in_executor(None, func)
+        call_sys_service = functools.partial(self.__sys_service, request)
+        future = self.__loop.run_in_executor(None, call_sys_service)
         # def callback(future):
         #     print(future.result())
         # future.add_done_callback(callback)
@@ -116,12 +113,10 @@ class Process:
 
 
 class ROS2API:
-    def __init__(self, *, ros_node: ROSNode, connection: Connection, loop: AbstractEventLoop = None) -> None:
+    def __init__(self, *, ros_node: ROSNode, sys_service, loop: AbstractEventLoop = None) -> None:
         self.__loop = loop
-        self.__connection = connection
 
         self.__processes: Set[Process] = set()
-        self.__call_lock = threading.Lock()
         
         self.__ros_node = ros_node
         self.__ros2_pkg_api = ROS2PackageAPI(ros_node, loop=loop)
@@ -129,15 +124,10 @@ class ROS2API:
         self.__ros2_param_api = ROS2ParamAPI(ros_node, loop=loop)
         self.__ros2_interface_api = ROS2InterfaceAPI(ros_node, loop=loop)
         self.__ros2_topic_api = ROS2TopicAPI(ros_node, loop=loop)
+        self.__sys_service = sys_service
         
         self.__logger = launch.logging.get_logger('ROS2API')
-
-    def __call_service(self, request):
-        with self.__call_lock:
-            self.__connection.send(request)
-            if self.__connection.poll(timeout=3.5):
-                response = self.__connection.recv()
-        return response
+        
 
     def _emit_event(self, event):
         req_id = event.get("id")
@@ -206,11 +196,11 @@ class ROS2API:
             on_stdout=on_stdout,
             on_stderr=on_stderr,
             cmd=cmd,
-            call_service=self.__call_service,
+            sys_service=self.__sys_service,
             loop=self.__loop)
 
         self.__processes.add(process)
-        func = functools.partial(self.__call_service, request)
+        func = functools.partial(self.__sys_service, request)
         response = await self.__loop.run_in_executor(None, func)
         return process if req_id == response else None
 

@@ -1,0 +1,13 @@
+hot_reload:
+  patterns: ["*.py", "*.yml"]
+process_disable: True
+List:
+  grid:
+    w: 2
+    h: 3
+    minW: 2
+    minH: 2
+Button:
+  grid:
+    w: 2
+    h: 2

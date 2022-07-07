@@ -1,15 +1,9 @@
-from typing import Optional, Union, Iterable, Callable, cast
-from typing import List, Dict, Set
+from typing import Optional, Union, Iterable, Callable, cast, TYPE_CHECKING
+from typing import List, Dict, Set, Any
 
 import asyncio
-from xmlrpc.client import boolean
 import launch.logging
 import threading
-import time
-from collections import defaultdict
-
-from rclpy.node import Node as ROSNode
-from rclpy.parameter import Parameter
 
 from launch.actions import OpaqueFunction
 from launch.events import matches_action
@@ -28,6 +22,11 @@ from launch_ros.remap_rule_type import SomeRemapRules
 from .node_wrapper import Node
 from .process import Process, ProcessStatus
 from ..events import ExecutionProcess
+from ...db.web import ROS2WebDB, ROS2WebDBException
+
+
+if TYPE_CHECKING:
+    from .plugin_manager import PluginManager
 
 
 class SystemService(OpaqueFunction):
@@ -38,12 +37,13 @@ class SystemService(OpaqueFunction):
         self.__launch_context = None
         self.__lock = threading.Lock()
         self.__method_lock = threading.Lock()
-        self.__send_queue = None
         self.__loop = asyncio.get_event_loop()
         self.__logger = launch.logging.get_logger('SystemService')
+        self.__db: ROS2WebDB = None
 
     def __function(self, context: LaunchContext):
         self.__launch_context = context
+        self.__db = context.get_locals_as_dict().get("db")
 
         event_handlers = [
             EventHandler(
@@ -65,72 +65,93 @@ class SystemService(OpaqueFunction):
         with self.__lock:
             self.__processes.add(process)
 
-        if self.__send_queue is not None:
-            req = {
-                'operation': 'system_event',
-                'webPackageName': process.wp_name,
-                'event': {
-                    'id': process.id,
-                    'pid': process.pid,
-                    'event_type': 'on_start'
-                }
+        if self.__plugin_manager is not None:
+            event = {
+                'id': process.id,
+                'pid': process.pid,
+                'event_type': 'on_start'
             }
-            asyncio.run_coroutine_threadsafe(
-                self.__send_queue.put(req), self.__loop)
+            self.__plugin_manager.emit_system_event(process.plugin_id, event)
 
     def __on_exit(self, process: Process, event: ProcessExited):
         with self.__lock:
             self.__processes.remove(process)
-
-        if self.__send_queue is not None:
-            req = {
-                'operation': 'system_event',
-                'webPackageName': process.wp_name,
-                'event': {
-                    'id': process.id,
-                    'pid': process.pid,
-                    'event_type': 'on_exit'
-                }
+            
+        if self.__plugin_manager is not None:
+            event = {
+                'id': process.id,
+                'pid': process.pid,
+                'event_type': 'on_exit'
             }
-            asyncio.run_coroutine_threadsafe(
-                self.__send_queue.put(req), self.__loop)
+            self.__plugin_manager.emit_system_event(process.plugin_id, event)
 
     def __on_stdout(self, process: Process, event: ProcessStdout):
-        if self.__send_queue is not None:
-            if process.is_emit('on_stdout'):
-                req = {
-                    'operation': 'system_event',
-                    'webPackageName': process.wp_name,
-                    'event': {
-                        'id': process.id,
-                        'pid': process.pid,
-                        'event_type': 'on_stdout',
-                        'text': event.text
-                    }
-                }
-                asyncio.run_coroutine_threadsafe(
-                    self.__send_queue.put(req), self.__loop)
+        if self.__plugin_manager is not None:
+            event = {
+                'id': process.id,
+                'pid': process.pid,
+                'event_type': 'on_stdout',
+                'text': event.text
+            }
+            self.__plugin_manager.emit_system_event(process.plugin_id, event)
 
     def __on_stderr(self, process: Process, event: ProcessStderr):
-        if self.__send_queue is not None:
-            if process.is_emit('on_stderr'):
-                req = {
-                    'operation': 'system_event',
-                    'webPackageName': process.wp_name,
-                    'event': {
-                        'id': process.id,
-                        'pid': process.pid,
-                        'event_type': 'on_stderr',
-                        'text': event.text
-                    }
-                }
-                asyncio.run_coroutine_threadsafe(
-                    self.__send_queue.put(req), self.__loop)
+        if self.__plugin_manager is not None:
+            event = {
+                'id': process.id,
+                'pid': process.pid,
+                'event_type': 'on_stderr',
+                'text': event.text
+            }
+            self.__plugin_manager.emit_system_event(process.plugin_id, event)
+            
 
-    def set_send_queue(self, queue: asyncio.Queue):
-        self.__send_queue = queue
+    def init(self, *, plugin_manager: 'PluginManager'):
+        self.__plugin_manager = plugin_manager
 
     # API
+    # DB
+    async def db_new_data(self, *, data, criteria, plugin_id) -> bool:
+        db = self.__db.db(plugin_id)
+        return self.__db.new(db, data, criteria)
+
+    async def db_upsert_data(self, *, data, criteria, plugin_id):
+        db = self.__db.db(plugin_id)
+        self.__db.upsert(db, data, criteria)
+
+    async def db_insert_data(self, *, data, plugin_id):
+        db = self.__db.db(plugin_id)
+        self.__db.insert(db, data)
+
+    async def db_insert_multiple_data(self, *, data, plugin_id):
+        db = self.__db.db(plugin_id)
+        self.__db.insert_multiple(db, data)
+
+    async def db_update_data(self, *, data, criteria, plugin_id):
+        db = self.__db.db(plugin_id)
+        self.__db.update(db, data, criteria)
+
+    async def db_remove_data(self, *, criteria, plugin_id):
+        db = self.__db.db(plugin_id)
+        self.__db.remove(db, criteria)
+
+    async def db_get_exist_data(self, *, field_name, plugin_id):
+        db = self.__db.db(plugin_id)
+        return self.__db.exist(db, field_name)
+
+    async def db_get_exists(self, *, field_name, plugin_id):
+        db = self.__db.db(plugin_id)
+        return self.__db.exists(db, field_name)
+
+    async def db_get_data(self, *, criteria, plugin_id):
+        db = self.__db.db(plugin_id)
+        return self.__db.get(db, criteria)
+
+    async def db_find_data(self, *, criteria, plugin_id):
+        db = self.__db.db(plugin_id)
+        return self.__db.find(db, criteria)
+
+    # ROS
     async def ros2_run(self, *,
                        req_id: str,
                        executable: SomeSubstitutionsType,
@@ -142,7 +163,7 @@ class SystemService(OpaqueFunction):
                        remappings: Optional[SomeRemapRules] = None,
                        arguments: Optional[Iterable[SomeSubstitutionsType]] = None,
                        events: List[str] = [],
-                       wp_name: str
+                       plugin_id: str
                        ) -> Optional[Dict]:
 
         action = Node(executable=executable,
@@ -157,7 +178,7 @@ class SystemService(OpaqueFunction):
         completed_future = self.__loop.create_future()
         process = Process(
             req_id=req_id,
-            action=action, completed_future=completed_future, wp_name=wp_name, events=events)
+            action=action, completed_future=completed_future, plugin_id=plugin_id, events=events)
         process.on_start = self.__on_start
         process.on_exit = self.__on_exit
         process.on_stdout = self.__on_stdout
@@ -183,7 +204,7 @@ class SystemService(OpaqueFunction):
         finally:
             return response
 
-    async def shutdown_process(self, *, pid: int, wp_name: str) -> boolean:
+    async def shutdown_process(self, *, pid: int, plugin_id: str) -> bool:
         processes = [
             process for process in self.__processes if process.pid == pid]
         process = processes[0] if len(processes) == 1 else None

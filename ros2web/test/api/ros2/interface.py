@@ -16,8 +16,7 @@ def test_interface_list():
         interfaces = loop.run_until_complete(interface_api.list())
     
     for interface in interfaces:
-        print(dataclasses.asdict(interface))
-        break
+        print(interface)
     
     loop.close()
 

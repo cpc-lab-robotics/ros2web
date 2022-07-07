@@ -1,10 +1,24 @@
+hot_reload:
+  patterns: ["*.py", "*.yml"]
+@[if extension]@
+process_disable: True
+Widget:
+  size:
+    w: 3
+    h: 3
+    # minW: 3
+    # minH: 3
+    # maxW: 3
+    # maxH: 3
+  props:
+    label: Hello
+@[end if]@
+@[if package]@
 page:
-  layout:
-    Cards:
+  style: Grid
   widgets:
-    - Stack:
-        card_name: Hello, world
-        widgets:
-          - Button:
-              id: button
-              label: ${button_label}
+    - name: std.Button
+      id: button
+      props:
+        label: ${button_label}
+@[end if]@

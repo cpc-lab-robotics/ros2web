@@ -1,23 +1,19 @@
-from typing import Union, Optional, List, Any, Dict, Tuple
+from typing import Set, Union, Optional, List, Any, Dict, Tuple
 
 
 import os
 import glob
 from pathlib import Path
 from tinydb import TinyDB, Query, where
-
+from tinydb.table import Document, Table
 
 class DBBaseException(Exception):
     pass
 
 
 class DBBase:
-    def __init__(self, directory_path):
-
-        if os.path.isdir(directory_path) is False:
-            os.mkdir(directory_path)
-
-        self.__path = directory_path
+    def __init__(self, path):
+        self.__path = path
         self.__db_dict = {}
 
         files = glob.glob(os.path.join(self.__path, "*.json"))
@@ -33,54 +29,55 @@ class DBBase:
 
         return self.__db_dict[db_name]
 
-    def dbs(self):
+    def dbs(self) -> Set:
         return set(self.__db_dict.keys())
 
     def drop_dbs(self):
         for db_name in self.__db_dict.keys():
             self.drop_db(db_name)
 
-    def drop_db(self, db_name):
+    def drop_db(self, db_name: str):
         del self.__db_dict[db_name]
         filepath = os.path.join(self.__path, f"{db_name}.json")
         if os.path.isfile(filepath):
             os.remove(filepath)
 
-    def new(self, db, data, criteria) -> bool:
-        results = self.find(db, criteria)
+    def new(self, table: Table, data: Dict, criteria: Dict) -> bool:
+        results = self.find(table, criteria)
         if len(results) == 0:
-            db.insert(data)
+            table.insert(data)
             return True
         else:
             return False
 
-    def upsert(self, db, data, criteria):
-        results = self.find(db, criteria)
+    def upsert(self, table: Table, data:Dict, criteria:Dict):
+        results = self.find(table, criteria)
         if len(results) > 0:
-            db.update(data, Query().fragment(criteria))
+            table.update(data, Query().fragment(criteria))
         else:
-            db.insert(data)
+            table.insert(data)
 
-    def insert(self, db, data):
-        db.insert(data)
+    def insert(self, table: Table, data: Dict):
+        table.insert(data)
 
-    def insert_multiple(self, db, data: List[Any]):
-        db.insert_multiple(data)
+    def insert_multiple(self, table: Table, data: List[Dict]):
+        table.insert_multiple(data)
 
-    def update(self, db, data, criteria):
-        db.update(data, Query().fragment(criteria))
+    def update(self, table: Table, data: Dict, criteria: Dict):
+        table.update(data, Query().fragment(criteria))
 
-    def remove(self, db, criteria):
-        db.remove(Query().fragment(criteria))
+    def remove(self, table: Table, criteria: Dict):
+        table.remove(Query().fragment(criteria))
 
-    def exist(self, db, field_name):
-        return db.get(Query()[field_name].exists())
+    def exist(self, table: Table, field_name: str):
+        return table.get(Query()[field_name].exists())
 
-    def exists(self, db, field_name):
-        return db.search(Query()[field_name].exists())
+    def exists(self, table: Table, field_name: str):
+        return table.search(Query()[field_name].exists())
 
-    def get(self, db, criteria):
-        return db.get(Query().fragment(criteria))
+    def get(self, table: Table, criteria: Dict):
+        return table.get(Query().fragment(criteria))
 
-    def find(self, db, criteria):
-        return db.search(Query().fragment(criteria))
+    def find(self, table: Table, criteria: Dict):
+        return table.search(Query().fragment(criteria))
+    

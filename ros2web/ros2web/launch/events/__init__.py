@@ -1,7 +1,7 @@
-from .execution_web_package import ExecutionWebPackage
+from .execution_plugin import ExecutionPlugin
 from .execution_process import ExecutionProcess
 
 __all__ = [
-    'ExecutionWebPackage',
+    'ExecutionPlugin',
     'ExecutionProcess',
 ]

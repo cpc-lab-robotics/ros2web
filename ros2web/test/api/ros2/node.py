@@ -15,12 +15,12 @@ from ros2web.api import ros2
 #         result = loop.run_until_complete(node_api.list())
 #         logger.info(result)
 
-def test_node_info():
-    logger = launch.logging.get_logger('test_node_info')
-    loop = asyncio.get_event_loop()
+# def test_node_info():
+#     logger = launch.logging.get_logger('test_node_info')
+#     loop = asyncio.get_event_loop()
     
-    with DirectNode([], node_name='test') as node:
-        node_api = ros2.ROS2NodeAPI(ros_node=node, loop=loop)
-        node_name = 'turtlesim'
-        result = loop.run_until_complete(node_api.info(node_name))
-        logger.info(result)
+#     with DirectNode([], node_name='test') as node:
+#         node_api = ros2.ROS2NodeAPI(ros_node=node, loop=loop)
+#         node_name = 'turtlesim'
+#         result = loop.run_until_complete(node_api.info(node_name))
+#         logger.info(result)

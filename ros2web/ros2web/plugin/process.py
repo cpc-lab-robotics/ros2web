@@ -112,7 +112,10 @@ def process_worker(*, plugin: 'Plugin',
                 logger.error("startup: ".format(e))
 
         async def run_forever(event):
-            while not event.is_set():
+            nonlocal is_running
+            while is_running:
+                if event.is_set():
+                    break
                 await asyncio.sleep(1)
 
         loop.set_exception_handler(exception_handler)
@@ -134,7 +137,6 @@ def process_worker(*, plugin: 'Plugin',
         loop.run_in_executor(
             None, call_api, api_conn, api)
         loop.create_task(catch_exception(plugin_package.on_startup()))
-
         # loop.run_forever()
         loop.run_until_complete(run_forever(stop_event))
     except KeyboardInterrupt:
@@ -269,12 +271,15 @@ class PluginProcess:
         try:
             with self.__call_lock:
                 self.__parent_api_conn.send(request)
-                if self.__parent_api_conn.poll(timeout=5):
+                if self.__parent_api_conn.poll(timeout=3):
                     response = self.__parent_api_conn.recv()
         except EOFError as e:
             self.__logger.error("[call_api] EOFError: {}".format(e))
         except ValueError as e:
             self.__logger.error("[call_api] ValueError: {}".format(e))
+        except BrokenPipeError as e:
+            self.__logger.error("[call_api] BrokenPipeError: {}".format(e))
+            
         return response
 
     async def call_api(self, *,

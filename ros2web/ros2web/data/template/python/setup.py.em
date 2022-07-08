@@ -11,7 +11,7 @@ setup(
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
     ],
-    install_requires=['setuptools', 'ros2web'],
+    install_requires=['setuptools'],
     zip_safe=True,
     maintainer='@maintainer_name',
     maintainer_email='@maintainer_email',

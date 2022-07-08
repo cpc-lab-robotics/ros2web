@@ -3,7 +3,7 @@ hot_reload:
 @[if extension]@
 process_disable: True
 Widget:
-  size:
+  grid:
     w: 3
     h: 3
     # minW: 3

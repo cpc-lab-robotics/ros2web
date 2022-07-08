@@ -67,7 +67,7 @@ class PluginAPI:
         self.__state_key = set(state.keys())
         self.__routes = routes
 
-    def set_receive_data(self, data, timeout: float = 3.0) -> None:
+    def set_receive_data(self, data, timeout: float = 2.0) -> None:
         
         operation = data.get('operation')
         if operation == 'emit':
@@ -112,7 +112,7 @@ class PluginAPI:
             self.__ros2_api._emit_event(event)
             
 
-    def call(self, data, timeout: float = 4.0):
+    def call(self, data, timeout: float = 2.0):
         response = None
         api_method: str = data.get('api_method')
         if api_method is not None:

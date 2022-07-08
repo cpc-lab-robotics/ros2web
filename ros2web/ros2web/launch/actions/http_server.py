@@ -214,18 +214,17 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
     return ws
 
 
-
 # @routes.get("/{file_path:.*}")
 # async def ros2web(request: web.Request) -> web.StreamResponse:
 
 #     file_path = request.match_info['file_path']
-    
+
 #     base, ext = os.path.splitext(file_path)
 #     if ext == '':
 #         file_path = 'index.html'
 
 #     file_name = os.path.basename(file_path)
-    
+
 #     file_path = os.path.join(PUBLIC_FILE_PATH, file_name)
 #     if os.path.exists(file_path):
 #         return web.FileResponse(file_path)
@@ -236,6 +235,7 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
 async def root_handler(request: web.Request) -> NoReturn:
     exc = web.HTTPFound(location="/ros2web")
     raise exc
+
 
 @routes.get('/ros2web/widget/{plugin_name}/{file_name}')
 async def get_widget_file(request: web.Request) -> web.StreamResponse:
@@ -252,6 +252,7 @@ async def get_widget_file(request: web.Request) -> web.StreamResponse:
                                                 plugin_name=plugin_name,
                                                 directory='widgets',
                                                 file_name=file_name)
+
     if file_path is None:
         raise web.HTTPNotFound()
     return web.FileResponse(file_path)
@@ -263,13 +264,14 @@ async def index_handler(request: web.Request) -> web.StreamResponse:
     # response.set_cookie('')
     return response
 
+
 @routes.get("/ros2web/{file_path:.*}")
 async def ros2web(request: web.Request) -> web.StreamResponse:
     file_path = request.match_info['file_path']
     base, ext = os.path.splitext(file_path)
     if ext == '':
         file_path = 'index.html'
-    
+
     file_path = os.path.join(PUBLIC_FILE_PATH, file_path)
     if os.path.exists(file_path):
         return web.FileResponse(file_path)
@@ -352,9 +354,8 @@ async def queue_listener(app: web.Application) -> None:
 @web.middleware
 async def token_auth(request: web.Request, handler):
     _token = request.app["token"]
-    
+
     if request.path == '/':
-       
         search_params = request.rel_url.query
         token_param = search_params.get("token", request.cookies.get("AUTH"))
         if _token != token_param:

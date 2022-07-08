@@ -98,7 +98,7 @@ class GridLayout extends React.Component<GridProps, GridState> {
               elevation={elevation}
               sx={{
                 position: "relative",
-                p: elevation ? 1 : 0,
+                p: 0,
                 width: "100%",
                 height: "100%",
                 overflow: "hidden",

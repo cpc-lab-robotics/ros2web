@@ -79,7 +79,7 @@ export default function PluginCard(props: PluginCardProps) {
     // navigate(`/ros2web/${name}`);
     window.open(`/ros2web/${name}`, "_blank");
   };
-
+  
   const { status, data: plugin, error } = usePlugin(pluginId);
 
   return status === "loading" ? (

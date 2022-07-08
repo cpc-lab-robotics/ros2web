@@ -101,14 +101,6 @@ module.exports = {
           requiredVersion: deps["@emotion/styled"],
           singleton: true,
         },
-        "react-query": {
-          requiredVersion: deps["react-query"],
-          singleton: true,
-        },
-        "axios": {
-          requiredVersion: deps["axios"],
-          singleton: true,
-        }
       },
     }),
     new HtmlWebpackPlugin({

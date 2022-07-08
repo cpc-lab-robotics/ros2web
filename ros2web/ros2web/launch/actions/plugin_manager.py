@@ -83,7 +83,7 @@ class PluginManager(OpaqueCoroutine):
             process.shutdown()
 
     async def __coroutine(self, context: LaunchContext):
-        
+
         self.__launch_context = context
         self.__db = cast(ROS2WebDB, context.get_locals_as_dict().get("db"))
 
@@ -106,7 +106,6 @@ class PluginManager(OpaqueCoroutine):
         self.__receive_loop_task = self.__loop.create_task(
             self.__receive_loop())
 
-        
         service: SystemService = context.get_locals_as_dict().get("system_service")
         service.init(plugin_manager=self)
 
@@ -149,7 +148,7 @@ class PluginManager(OpaqueCoroutine):
                 plugin_doc = self.__db.get(table, {
                     'id': plugin_id
                 })
-                
+
                 if plugin_doc:
                     disable = plugin_doc.get('disable', disable)
 
@@ -215,7 +214,7 @@ class PluginManager(OpaqueCoroutine):
                 config = open_yaml_file(plugin.package_name, 'config.yml')
                 plugin = plugin._replace(config=config)
                 self.__plugin_dict[plugin.id] = plugin
-            
+
             process = self.__plugin_process_dict.get(plugin.id)
             if process is not None:
                 process.restart(plugin)
@@ -274,28 +273,28 @@ class PluginManager(OpaqueCoroutine):
         process = self.__plugin_process_dict.get(plugin_id)
         if process:
             process.send_data(data)
-    
+
     def get_plugins(self) -> List:
         plugins = []
         for plugin in self.__plugin_dict.values():
             plugins.append(plugin.id)
         return sorted(plugins)
-    
-    def get_plugin(self, plugin_id: str)->Optional[Plugin]:
-        
+
+    def get_plugin(self, plugin_id: str) -> Optional[Plugin]:
+
         plugin = self.__plugin_dict.get(plugin_id)
         if plugin:
             return plugin._asdict()
         else:
             return None
-        
+
     def enable_plugin(self, plugin_id: str):
-        
+
         table = self.__db.db('ros2web').table('plugin')
         process = self.__plugin_process_dict.get(plugin_id)
         if process is not None:
             plugin = self.__plugin_dict[plugin_id]
-            
+
             process.start()
             plugin = plugin._replace(disable=False)
             self.__plugin_dict[plugin_id] = plugin
@@ -313,7 +312,7 @@ class PluginManager(OpaqueCoroutine):
         process = self.__plugin_process_dict.get(plugin_id)
         if process is not None:
             plugin = self.__plugin_dict[plugin_id]
-            
+
             process.shutdown()
             plugin = plugin._replace(disable=True)
             self.__plugin_dict[plugin_id] = plugin
@@ -321,7 +320,7 @@ class PluginManager(OpaqueCoroutine):
                 'id': plugin_id,
                 'disable': True
             }, {'id': plugin_id})
-            
+
             return plugin._asdict()
         else:
             return None
@@ -363,7 +362,7 @@ class PluginManager(OpaqueCoroutine):
         return init_props, init_grid
 
     def init_widgets(self, widgets: List[Dict]) -> Dict:
-        
+
         layout = {}
         if widgets is not None:
             for widget in widgets:
@@ -371,7 +370,7 @@ class PluginManager(OpaqueCoroutine):
                 props = widget.get('props', {})
                 props = {} if props is None else props
                 widget_key = widget['key']
-                grid =  widget.get('grid', {})
+                grid = widget.get('grid', {})
                 layout[widget_key] = {**init_grid, **grid}
                 widget['props'] = {**init_props, **props}
 

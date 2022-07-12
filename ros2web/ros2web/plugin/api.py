@@ -28,7 +28,6 @@ class PluginAPIException(Exception):
 class PluginAPI:
 
     def __init__(self, *,
-                 ros2_api: ROS2API,
                  send_data: Optional[Callable]=None,
                  loop: AbstractEventLoop
                  ) -> None:
@@ -38,7 +37,6 @@ class PluginAPI:
         self.__handlers: Dict[str, Callable] = {}
         self.__lock = threading.Lock()
         
-        self.__ros2_api = ros2_api
         self.__send_data = send_data
         self.__loop = loop
 
@@ -67,8 +65,7 @@ class PluginAPI:
         self.__state_key = set(state.keys())
         self.__routes = routes
 
-    def set_receive_data(self, data, timeout: float = 2.0) -> None:
-        
+    async def set_receive_data(self, data) -> None:
         operation = data.get('operation')
         if operation == 'emit':
             widget_event = data.get('widgetEvent')
@@ -80,17 +77,11 @@ class PluginAPI:
             model_value = dict_to_model(value)
 
             new_widget_event = WidgetEvent(widget_id, event_type, model_value)
-
+            
             handler = self.__handlers.get(event_id)
             if handler is not None:
                 try:
-                    future = asyncio.run_coroutine_threadsafe(
-                        handler(new_widget_event), self.__loop)
-                    future.result(timeout=timeout)
-                except concurrent.futures.TimeoutError:
-                    self.__logger.error(
-                        'The coroutine took too long, cancelling the task...')
-                    future.cancel()
+                    await handler(new_widget_event)
                 except Exception as e:
                     self.__logger.error(
                         'event_handler[{}]: {}'.format(handler.__name__, e))
@@ -104,63 +95,40 @@ class PluginAPI:
                 self.__set_state(_state)
             except Exception as e:
                 self.__logger.error("update error: ".format(e))
-
-        elif operation == 'system_event':
-            if self.__ros2_api is None:
-                return
-            event = data.get('event', {})
-            self.__ros2_api._emit_event(event)
             
 
-    def call(self, data, timeout: float = 2.0):
+    async def call(self, req):
+        
+        request_method: str = req.get('request_method')
+        path: str = req.get('path')
+        search_params: Dict = req.get('search_params', {})
+        json_payload: Dict = req.get('json_payload', {})
+
+        method_name, params = self.__routes.get_method_name(
+            request_method=request_method,
+            path=path,
+        )
+        
+        request = Request(
+            match_params=params,
+            search_params=search_params,
+            json_payload=json_payload
+        )
+        
         response = None
-        api_method: str = data.get('api_method')
-        if api_method is not None:
-            kwargs: Dict = data.get('kwargs', {})
-            try:
-                method = getattr(self, api_method, None)
-                if method is None:
-                    return None
-                response = method(**kwargs)
-            except Exception as e:
-                self.__logger.error("call[{}]: {}".format(api_method, e))
-            return response
-        else:
-            if self.__routes is None:
-                return None
-            request_method: str = data.get('request_method')
-            path: str = data.get('path')
-            search_params: Dict = data.get('search_params', {})
-            json_payload: Dict = data.get('json_payload', {})
-
-            method_name, params = self.__routes.get_method_name(
-                request_method=request_method,
-                path=path,
-            )
-            request = Request(
-                match_params=params,
-                search_params=search_params,
-                json_payload=json_payload
-            )
-
-            method = getattr(self.__plugin, method_name, None)
-            if method is None:
-                return None
-            try:
-                future = asyncio.run_coroutine_threadsafe(
-                    getattr(self.__plugin, method_name)(request), self.__loop)
-                
-                response = future.result(timeout=timeout)
-                if request_method == 'page':
-                    response = self.__init_page(response)
-                else:
-                    response = dataclasses_to_dict(response)
-            except concurrent.futures.TimeoutError:
-                self.__logger.error('TimeoutError')
-                future.cancel()
-            except Exception as e:
-                self.__logger.error('call_api[{}]: {}'.format(method_name, e))
-            return response
+        method = getattr(self.__plugin, method_name, None)
+        if method is None:
+            return None
+        try:
+            response = await method(request)
+            if request_method == 'page':
+                response = self.__init_page(response)
+            else:
+                response = dataclasses_to_dict(response)
+        except Exception as e:
+            self.__logger.error('call_api[{}]: {}'.format(method_name, e))
+        return response
+            
 
     def get_state(self) -> Dict:
         _state = {}
@@ -173,9 +141,11 @@ class PluginAPI:
         bind = {}
         for k, v in self.__bind.items():
             bind[k] = list(v)
-            
+        
         unique_name = UniqueName()
         widgets = page.get('widgets', [])
+        widgets = [] if widgets is None else widgets
+        
         for widget in widgets:
             widget_name: str = widget.get('name')
             if widget_name is None:
@@ -221,10 +191,6 @@ class PluginAPI:
     @property
     def state(self) -> Dict:
         return self.__state
-
-    @property
-    def ros2(self) -> ROS2API:
-        return self.__ros2_api
 
     @property
     def loop(self) -> asyncio.AbstractEventLoop:

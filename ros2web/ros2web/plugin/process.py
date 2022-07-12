@@ -2,6 +2,7 @@ from typing import Callable, Coroutine, Optional, cast, Union
 from typing import List, Dict, Set
 from typing import TYPE_CHECKING
 
+import time
 from types import ModuleType
 import threading
 import asyncio
@@ -9,294 +10,205 @@ import importlib
 import importlib.util
 import concurrent.futures
 import concurrent.futures.process
-import multiprocessing
+import multiprocessing as mp
 from multiprocessing import JoinableQueue
 from multiprocessing.connection import Connection
 
 import launch.logging
-from ..api import ROS2API
+
+from ..api.ros2 import ROS2API
 from ..api import Plugin as PluginPcackage
 from .ros_executor import ROSExecutor
 from .api import PluginAPI
 from ..utilities.converter import props_to_camel, props_to_snake
-from ..utilities import open_yaml_file
+from ..utilities import open_yaml_file, reload_module
+from ..launch.service import DynamicLaunchService
 
 
 if TYPE_CHECKING:
-    from ..launch.actions import SystemService
-    from ..launch.actions.plugin_manager import Plugin
+    from .manager import Plugin
 
 
-def reload_module(module, package_name, reloaded):
-    """Recursively reload modules."""
-    importlib.reload(module)
-    reloaded[module.__name__] = module
-    for attribute_name in dir(module):
-        attribute = getattr(module, attribute_name)
-        if type(attribute) is ModuleType:
-            if attribute.__name__.startswith(package_name) and attribute.__name__ not in reloaded:
-                reload_module(attribute, package_name, reloaded)
-
-
-def process_worker(*, plugin: 'Plugin',
-                   receive_queue: JoinableQueue, send_queue: JoinableQueue,
-                   api_conn: Connection, service_conn: Connection, reload: bool,
-                   stop_event):
-
-    logger = launch.logging.get_logger(f'process_worker[{plugin.name}]')
-
-    try:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        module = importlib.import_module(plugin.module_name, plugin.location)
-
-        if reload:
-            reload_module(module, plugin.package_name, {})
-            module = importlib.reload(module)
-
-        plugin_package: PluginPcackage = getattr(
-            module, plugin.class_name)(plugin.config)
-        is_running = True
-
-        def receive_data(queue: JoinableQueue, api: PluginAPI):
-            nonlocal is_running
-            while is_running:
-                try:
-                    data = queue.get()
-                    api.set_receive_data(data)
-                finally:
-                    if queue.qsize() > 0:
-                        queue.task_done()
-
-        def send_data(payload: Dict):
-            nonlocal send_queue
-            nonlocal plugin
-
-            event = {
-                'operation': "update",
-                'webPackageName': plugin.name,
-                'payload': payload
-            }
-            send_queue.put(event)
-
-        def call_api(conn: Connection, api: PluginAPI):
-            nonlocal logger
-            nonlocal is_running
-            while is_running:
-                try:
-                    conn.send(api.call(conn.recv()))
-                except ValueError as e:
-                    logger.error(e)
-                except EOFError:
-                    pass
-
-        call_service_lock = threading.Lock()
-        def call_service(request):
-            nonlocal service_conn
-            nonlocal call_service_lock
-            with call_service_lock:
-                service_conn.send(request)
-                if service_conn.poll(timeout=3.5):
-                    response = service_conn.recv()
-            return response
-
-        def exception_handler(self, loop, context):
-            nonlocal logger
-            logger.error(context)
-
-        async def catch_exception(awaitable):
-            nonlocal logger
-            try:
-                return await awaitable
-            except Exception as e:
-                logger.error("startup: ".format(e))
-
-        async def run_forever(event):
-            nonlocal is_running
-            while is_running:
-                if event.is_set():
-                    break
-                await asyncio.sleep(1)
-
-        loop.set_exception_handler(exception_handler)
-
-        ros_executor = ROSExecutor(node_name=plugin.package_name,
-                                   namespace=None,
-                                   args=None,
-                                   loop=loop)
-        ros2_api = ROS2API(ros_node=ros_executor.node,
-                           sys_service=call_service, loop=loop)
-
-        send_data = send_data if plugin.type == 'package' else None
-        api = PluginAPI(ros2_api=ros2_api, send_data=send_data, loop=loop)
-        plugin_package._set_api(api)
-        plugin_package._set_sys_service(call_service)
-
-        loop.run_in_executor(
-            None, receive_data, receive_queue, api)
-        loop.run_in_executor(
-            None, call_api, api_conn, api)
-        loop.create_task(catch_exception(plugin_package.on_startup()))
-        # loop.run_forever()
-        loop.run_until_complete(run_forever(stop_event))
-    except KeyboardInterrupt:
-        pass
-    finally:
-        is_running = False
-        loop.run_until_complete(plugin_package.on_shutdown())
-        ros_executor.shutdown()
-        loop.close()
-
-
-class PluginProcess:
-    def __init__(self, *, plugin: 'Plugin',
-                 receive_queue: JoinableQueue, service: 'SystemService'):
+class PluginProcess(mp.Process):
+    def __init__(self, *, plugin: 'Plugin', receive_queue: JoinableQueue, loop: asyncio.AbstractEventLoop):
+        super().__init__()
 
         self.__plugin = plugin
         self.__receive_queue = receive_queue
-        self.__service = service
-
-        self.__send_queue = None
-        self.__parent_api_conn = None
-        self.__parent_service_conn = None
-        self.__is_running = False
-        self.__process = None
-        self.__reload = False
-        self.__stop_event = None
+        parent_conn, child_conn = mp.Pipe()
+        self.__parent_conn = parent_conn
+        self.__child_conn = child_conn
         self.__call_lock = threading.Lock()
-        self.__loop = asyncio.get_event_loop()
+
         self.__logger = launch.logging.get_logger(
             f'process[{self.__plugin.name}]')
 
-    def restart(self, plugin):
-        self.__plugin = plugin
-        
-        if self.__is_running:
-            with self.__call_lock:
-                self.shutdown()
-                self.start()
+        self.__parent_loop = loop
+        self.__is_running = mp.Value('i', False)
 
-    def start(self):
-        process_disable = self.__plugin.config.get("process_disable", False)
-        if process_disable is True:
-            return
-        
-        if self.__is_running is False:
-            self.__is_running = True
-
-            parent_service_conn, child_service_conn = multiprocessing.Pipe()
-            parent_api_conn, child_api_conn = multiprocessing.Pipe()
-
-            self.__send_queue = JoinableQueue()
-            self.__parent_api_conn = parent_api_conn
-            self.__parent_service_conn = parent_service_conn
-            
-            self.__loop.run_in_executor(None, self.__service_loop)
-
-            self.__stop_event = multiprocessing.Event()
-
-            # TODO: Rewrite process_worker as process class.
-            self.__process = multiprocessing.Process(
-                target=process_worker, kwargs={
-                    'plugin': self.__plugin,
-                    'receive_queue': self.__send_queue,
-                    'send_queue': self.__receive_queue,
-                    'api_conn': child_api_conn,
-                    'service_conn': child_service_conn,
-                    'reload': self.__reload,
-                    'stop_event': self.__stop_event
-                })
-            
-            self.__process.start()
-            self.__reload = True
-
-    def shutdown(self):
-        if self.__process is None:
-            return
-        
-        if self.__is_running:
-            self.__is_running = False
-            if self.__process.is_alive():
-                self.__stop_event.set()
-                self.__process.join(timeout=3.0)
-            self.__process.terminate()
-                
-            self.__send_queue.close()
-            self.__send_queue.join_thread()
-            self.__parent_service_conn.close()
-            self.__parent_api_conn.close()
-
-    def __call_service(self, data, timeout: float = 3.0):
-        method_name: str = data.get('method_name')
-        if method_name.startswith("_"):
-            return None
-
-        args = data.get('args', [])
-        kwargs = data.get('kwargs', {})
-        kwargs['plugin_id'] = self.__plugin.id
-
-        response = None
-        try:
-            future = asyncio.run_coroutine_threadsafe(
-                getattr(self.__service, method_name)(*args, **kwargs),
-                self.__loop)
-            response = future.result(timeout=timeout)
-        except concurrent.futures.TimeoutError:
-            self.__logger.error(
-                'The coroutine took too long, cancelling the task...')
-            future.cancel()
-        except Exception as e:
-            self.__logger.error('call_service[{}]: {}'.format(method_name, e))
-
-        return response
-
-    def __service_loop(self):
-        while self.__is_running:
-            try:
-                self.__parent_service_conn.send(
-                    self.__call_service(self.__parent_service_conn.recv())
-                )
-            except ValueError as e:
-                self.__logger.error('service_loop: '.format(e))
-            except EOFError:
-                pass
-            except Exception as e:
-                self.__logger.error('service_loop: '.format(e))
-
-    def send_data(self, data):
-        self.__send_queue.put(data)
-
-    def __call_api(self, request):
-        response = None
-        try:
-            with self.__call_lock:
-                self.__parent_api_conn.send(request)
-                if self.__parent_api_conn.poll(timeout=3):
-                    response = self.__parent_api_conn.recv()
-        except EOFError as e:
-            self.__logger.error("[call_api] EOFError: {}".format(e))
-        except ValueError as e:
-            self.__logger.error("[call_api] ValueError: {}".format(e))
-        except BrokenPipeError as e:
-            self.__logger.error("[call_api] BrokenPipeError: {}".format(e))
-            
-        return response
+    @property
+    def is_running(self) -> bool:
+        return bool(self.__is_running.value)
 
     async def call_api(self, *,
                        request_method: str,
                        path: str,
                        search_params: Optional[Dict] = None,
                        json_payload: Optional[Dict] = None):
+
         request = {
             'request_method': request_method,
             'path': path,
             'search_params': search_params,
             'json_payload': json_payload
         }
-        return await self.__loop.run_in_executor(None, self.__call_api, request)
+        kwargs = {'request': request}
 
-    # async def get_state(self):
-    #     request = {
-    #         'api_method': 'get_state'
-    #     }
-    #     return await self.__loop.run_in_executor(None, self.__call_api, request)
+        return await self.__parent_loop.run_in_executor(None, self.__call_method, '_api_call', [], kwargs)
+
+    async def _api_call(self, *, request):
+        return await self.__api.call(request)
+
+    async def recv_data(self, data):
+        await self.__parent_loop.run_in_executor(None, self.__call_method, '_recv_data', [data], {})
+
+    async def _recv_data(self, data):
+        await self.__api.set_receive_data(data)
+
+    def _send_data(self, payload: Dict):
+        event = {
+            'operation': "update",
+            'webPackageName': self.__plugin.name,
+            'payload': payload
+        }
+        self.__receive_queue.put(event)
+
+    def shutdown(self):
+        time.sleep(0.1)
+        if self.is_running == True:
+            self.__call_method("_shutdown", [], {})
+
+    async def _shutdown(self):
+        self.__future.set_result(None)
+
+    async def main(self):
+        self.__future = asyncio.get_event_loop().create_future()
+        try:
+            await self.__plugin_package.on_startup()
+            await self.__future
+        except Exception as e:
+            self.__logger.error("{}".format(e))
+
+    def start(self):
+        process_disable = self.__plugin.config.get("process_disable", False)
+        if process_disable is False:
+            super().start()
+
+    def run(self):
+        try:
+            self.__is_running.value = True
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
+            self.__loop = loop
+            self.__loop.run_in_executor(None, self.__method_loop)
+
+            module = importlib.import_module(
+                self.__plugin.module_name, self.__plugin.location)
+
+            reload_module(module, self.__plugin.package_name, {})
+            module = importlib.reload(module)
+
+            self.__plugin_package: PluginPcackage = getattr(
+                module, self.__plugin.class_name)(self.__plugin.config)
+
+            ros_executor = ROSExecutor(node_name=self.__plugin.package_name,
+                                       namespace=None,
+                                       args=None,
+                                       loop=self.__loop)
+
+            launch_service = DynamicLaunchService()
+
+            ros2_api = ROS2API(ros_node=ros_executor.node,
+                               launch_service=launch_service,
+                               loop=self.__loop)
+
+            send_data = self._send_data if self.__plugin.type == 'package' else None
+            self.__api = PluginAPI(send_data=send_data, loop=self.__loop)
+            self.__plugin_package._set_api(self.__api)
+            self.__plugin_package._set_ros2api(ros2_api)
+            launch_service.daemon = True
+            launch_service.start()
+            self.__loop.run_until_complete(self.main())
+        except KeyboardInterrupt:
+            pass
+        finally:
+            self.__is_running.value = False
+            self.__loop.run_until_complete(self.__plugin_package.on_shutdown())
+            launch_service.shutdown()
+            ros_executor.shutdown()
+            
+            async def waiting():
+                counter = 0
+                while launch_service.is_running and counter < 10:
+                    counter += 1
+                    await asyncio.sleep(0.2)
+            
+            self.__loop.run_until_complete(waiting())
+            self.__loop.close()
+
+    def __call_method(self, method_name, args, kwargs):
+        if self.is_running is False:
+            return None
+
+        request = {
+            'method_name': method_name,
+            'args': args,
+            'kwargs': kwargs
+        }
+        response = None
+        try:
+            with self.__call_lock:
+                self.__parent_conn.send(request)
+                if self.__parent_conn.poll(timeout=3.5):
+                    response = self.__parent_conn.recv()
+        except EOFError as e:
+            self.__logger.error("[call_api] EOFError: {}".format(e))
+        except ValueError as e:
+            self.__logger.error("[call_api] ValueError: {}".format(e))
+        except BrokenPipeError as e:
+            self.__logger.error("[call_api] BrokenPipeError: {}".format(e))
+
+        return response
+
+    def __call(self, data, timeout: float = 3.0):
+        try:
+            method_name: str = data.get('method_name')
+            args = data.get('args', [])
+            kwargs = data.get('kwargs', {})
+            response = None
+
+            if self.__loop.is_closed() == False:
+                future = asyncio.run_coroutine_threadsafe(
+                    getattr(self, method_name)(*args, **kwargs), self.__loop)
+                response = future.result(timeout=timeout)
+        except concurrent.futures.TimeoutError:
+            self.__logger.error(
+                'The coroutine took too long, cancelling the task...')
+            future.cancel()
+        except Exception as e:
+            self.__logger.error('call_service[{}]: {}'.format(method_name, e))
+        return response
+
+    def __method_loop(self):
+        while self.is_running:
+            try:
+                self.__child_conn.send(
+                    self.__call(self.__child_conn.recv())
+                )
+            except ValueError as e:
+                self.__logger.error('{}'.format(e))
+            except EOFError:
+                pass
+            except Exception as e:
+                self.__logger.error('{}'.format(e))

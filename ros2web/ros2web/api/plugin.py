@@ -17,8 +17,8 @@ class Plugin:
                  ) -> None:
         self.__init_state = init_state
         self.__api: 'PluginAPI' = None
+        self.__ros2api: ROS2API = None
         self.__routes = routes
-        self.__sys_service = None
         
     def _set_api(self, api: 'PluginAPI'):
         api.init(plugin=self,
@@ -26,18 +26,8 @@ class Plugin:
                  routes=self.__routes)
         self.__api = api
         
-    def _set_sys_service(self, service):
-        self.__sys_service = service
-    
-    async def call_sys(self, method_name: str, args: List=[], kwargs: Dict={}):
-        if self.__sys_service:
-            request = {
-                'method_name': method_name,
-                'args': args,
-                'kwargs': kwargs
-            }
-            return await self.loop.run_in_executor(None, self.__sys_service, request)
-        return None
+    def _set_ros2api(self, api: ROS2API):
+        self.__ros2api = api
     
     def bind(self, widget_id, event_type, handler):
         self.__api.bind(widget_id, event_type, handler)
@@ -54,11 +44,11 @@ class Plugin:
 
     @property
     def ros2(self) -> ROS2API:
-        return self.__api.ros2
+        return self.__ros2api
 
     @property
     def ros_node(self) -> Node:
-        return self.__api.ros2.ros_node
+        return self.__ros2api.ros_node
     
     @property
     def loop(self) -> asyncio.AbstractEventLoop:

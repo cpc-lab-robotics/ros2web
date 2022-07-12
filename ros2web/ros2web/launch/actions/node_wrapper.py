@@ -7,22 +7,23 @@ from ...utilities import logging_logfile_handler_remover, logging_screen_handler
 class NodeWrapper(Node):
     def execute(self, context: LaunchContext):
         ret = super().execute(context)
-        # logging_logfile_handler_remover(self._Node__logger)
-        # logging_screen_handler_remover(self._Node__logger)
+        
+        logging_logfile_handler_remover(self._Node__logger)
+        logging_screen_handler_remover(self._Node__logger)
 
-        # logging_logfile_handler_remover(self._ExecuteProcess__stdout_logger)
-        # logging_screen_handler_remover(self._ExecuteProcess__stdout_logger)
+        logging_logfile_handler_remover(self._ExecuteProcess__stdout_logger)
+        logging_screen_handler_remover(self._ExecuteProcess__stdout_logger)
 
-        # logging_logfile_handler_remover(self._ExecuteProcess__stderr_logger)
-        # logging_screen_handler_remover(self._ExecuteProcess__stderr_logger)
+        logging_logfile_handler_remover(self._ExecuteProcess__stderr_logger)
+        logging_screen_handler_remover(self._ExecuteProcess__stderr_logger)
         
         return ret
 
     class _ExecuteProcess__ProcessProtocol(ExecuteProcess._ExecuteProcess__ProcessProtocol):
         def __init__(self, *args, **kwargs) -> None:
             super().__init__(*args, **kwargs)
-            # logging_logfile_handler_remover(self._ProcessProtocol__logger)
-            # logging_screen_handler_remover(self._ProcessProtocol__logger)
+            logging_logfile_handler_remover(self._ProcessProtocol__logger)
+            logging_screen_handler_remover(self._ProcessProtocol__logger)
 
 
 class ExecuteProcessWrapper(ExecuteProcess):
@@ -31,13 +32,13 @@ class ExecuteProcessWrapper(ExecuteProcess):
         ret = super().execute(context)
 
         # logging_logfile_handler_remover(self.__logger)
-        # logging_screen_handler_remover(self.__logger)
+        logging_screen_handler_remover(self.__logger)
 
         # logging_logfile_handler_remover(self.__stdout_logger)
-        # logging_screen_handler_remover(self.__stdout_logger)
+        logging_screen_handler_remover(self.__stdout_logger)
 
         # logging_logfile_handler_remover(self.__stderr_logger)
-        # logging_screen_handler_remover(self.__stderr_logger)
+        logging_screen_handler_remover(self.__stderr_logger)
 
         return ret
 
@@ -45,4 +46,4 @@ class ExecuteProcessWrapper(ExecuteProcess):
         def __init__(self, *args, **kwargs) -> None:
             super().__init__(*args, **kwargs)
             # logging_logfile_handler_remover(self.__logger)
-            # logging_screen_handler_remover(self.__logger)
+            logging_screen_handler_remover(self.__logger)

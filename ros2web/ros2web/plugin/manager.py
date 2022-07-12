@@ -2,6 +2,10 @@ from faulthandler import disable
 from typing import Optional, cast, TYPE_CHECKING, NamedTuple
 from typing import List, Dict, Set
 
+
+import os.path
+from watchdog.observers import Observer
+from watchdog.events import PatternMatchingEventHandler
 import functools
 import re
 import pathlib
@@ -9,27 +13,15 @@ import importlib.resources
 from importlib.metadata import metadata as setup_metadata
 import asyncio
 import pkg_resources
-from multiprocessing import JoinableQueue
-import os.path
-from watchdog.observers import Observer
-from watchdog.events import PatternMatchingEventHandler
+from multiprocessing import JoinableQueue, Pipe
+from multiprocessing.connection import Connection
 
 import launch.logging
-from launch.actions import OpaqueFunction, OpaqueCoroutine
-from launch.event import Event
-from launch.event_handler import EventHandler
-from launch.event_handlers import OnShutdown
-from launch.launch_context import LaunchContext
-from launch.utilities import is_a_subclass
 
-from ..events import ExecutionPlugin
-from ...plugin.process import PluginProcess
-from ...db.web import ROS2WebDB, ROS2WebDBException
+from .process import PluginProcess
+from ..db.web import ROS2WebDB, ROS2WebDBException
 
-from ...utilities import open_yaml_file
-
-if TYPE_CHECKING:
-    from .system_service import SystemService
+from ..utilities import open_yaml_file
 
 
 class Plugin(NamedTuple):
@@ -46,82 +38,104 @@ class Plugin(NamedTuple):
     version: str
 
 
-class PluginManager(OpaqueCoroutine):
+class PluginManager:
 
-    def __init__(self) -> None:
-        super().__init__(coroutine=self.__coroutine)
-
-        self.__logger = launch.logging.get_logger('PluginManager')
-
+    def __init__(self, db) -> None:
         self.__plugin_process_dict: Dict[str, PluginProcess] = {}
         self.__plugin_dict: Dict[str, Plugin] = {}
-
-        self.__send_queue = None
-        self.__receive_queue: asyncio.Queue = asyncio.Queue()
-        self.__is_running = False
-        self.__receive_plugin_queue: JoinableQueue = JoinableQueue()
-        self.__receive_loop_task = None
-        self.__launch_context = None
-        self.__db: ROS2WebDB = None
-        self.__loop = asyncio.get_event_loop()
-
-        self.__observer = Observer()
         self.__plugin_file_watcher: Dict[str, Observer] = {}
+        
+        self.__receive_ws_queue: asyncio.Queue = None
+        self.__send_ws_queue: asyncio.Queue = None
+        self.__receive_plugin_queue: JoinableQueue = None
+        self.__receive_plugin_queue_loop_future = None
 
-    def __on_shutdown(self, event: Event, context: LaunchContext):
+        self.__db: ROS2WebDB = db
+        self.__loop = asyncio.get_event_loop()
+        
+        
+        self.__observer = Observer()
+        
+        self.__is_running = False
+        self.__logger = launch.logging.get_logger('PluginManager')
+    
+    async def start(self):
+        self.__is_running = True
+        
+        self.__receive_ws_queue = asyncio.Queue()
+        self.__send_ws_queue = asyncio.Queue()
+        self.__receive_plugin_queue = JoinableQueue()
+
+        self.__loop.create_task(self.__receive_loop())
+        self.__receive_plugin_queue_loop_future = \
+            self.__loop.run_in_executor(None, self.__receive_plugin_queue_loop)
+
+        self.__load_plugin('extension')
+        self.__load_plugin('package')
+        self.__activation_plugins()
+
+        if len(self.__plugin_file_watcher) > 0:
+            self.__observer.start()
+        
+        
+    async def shutdown(self):
         self.__is_running = False
         self.__receive_plugin_queue.put(None)
-
-        if self.__receive_loop_task is not None:
-            self.__receive_loop_task.cancel()
-
+        if self.__receive_plugin_queue_loop_future is not None:
+            await self.__receive_plugin_queue_loop_future
+        
         if len(self.__plugin_file_watcher) > 0:
             self.__observer.stop()
             self.__observer.join()
 
-        for process in self.__plugin_process_dict.values():
-            process.shutdown()
+    async def set_ws_data(self, data):
+        await self.__receive_ws_queue.put(data)
+        
+    async def __receive_loop(self):
+        try:
+            while True:
+                try:
+                    data = await self.__receive_ws_queue.get()
+                    
+                    plugin_name = data.get('webPackageName')
+                    plugin_id = f'package.{plugin_name}'
+                    process = self.__plugin_process_dict.get(plugin_id)
+                    if process:
+                        await process.recv_data(data)
+                        
+                    self.__receive_ws_queue.task_done()
+                except Exception as e:
+                    self.__logger.error(e)
+        except asyncio.CancelledError:
+            pass
+            
+    
+    async def get_ws_data(self):
+        return await self.__send_ws_queue.get()
+    
 
-    async def __coroutine(self, context: LaunchContext):
-
-        self.__launch_context = context
-        self.__db = cast(ROS2WebDB, context.get_locals_as_dict().get("db"))
-
-        event_handlers = [
-            OnShutdown(on_shutdown=self.__on_shutdown),
-            EventHandler(
-                matcher=lambda event: is_a_subclass(
-                    event, ExecutionPlugin),
-                entities=OpaqueFunction(
-                    function=lambda context: [
-                        cast(ExecutionPlugin, context.locals.event).plugin]
-                ),
-            )
-        ]
-        for event_handler in event_handlers:
-            context.register_event_handler(event_handler)
-
-        self.__is_running = True
-        self.__loop.run_in_executor(None, self.__receive_plugin_queue_loop)
-        self.__receive_loop_task = self.__loop.create_task(
-            self.__receive_loop())
-
-        service: SystemService = context.get_locals_as_dict().get("system_service")
-        service.init(plugin_manager=self)
-
-        self.__load_plugin('extension')
-        self.__load_plugin('package')
-        self.__activation_plugins(service)
-
-        if len(self.__plugin_file_watcher) > 0:
-            self.__observer.start()
-
+    def __receive_plugin_queue_loop(self):
+        
+        try:
+            while self.__is_running:
+                try:
+                    data = self.__receive_plugin_queue.get()
+                    if data is not None:
+                        asyncio.run_coroutine_threadsafe(
+                            self.__send_ws_queue.put(data), self.__loop)
+                    self.__receive_plugin_queue.task_done()
+                except Exception as e:
+                    self.__logger.error(e)
+        finally:
+            self.__receive_plugin_queue.close()
+            self.__receive_plugin_queue.join_thread()
+                
+    
     def __load_plugin(self, plugin_type: str):
         table = self.__db.db('ros2web').table('plugin')
 
         for entry_point in pkg_resources.iter_entry_points(f'ros2web.{plugin_type}'):
             try:
-
                 location = entry_point.dist.location
                 package_name = os.path.basename(location)
                 plugin_name = entry_point.name
@@ -188,16 +202,15 @@ class PluginManager(OpaqueCoroutine):
             )
             self.__plugin_file_watcher[plugin.id] = observed_watch
 
-    def __activation_plugins(self, service: 'SystemService'):
-
+    def __activation_plugins(self):
         for name, plugin in self.__plugin_dict.items():
             try:
                 self.__set_hot_reload(plugin)
-
+                
                 process = PluginProcess(
                     plugin=plugin,
-                    service=service,
                     receive_queue=self.__receive_plugin_queue,
+                    loop=self.__loop,
                 )
                 self.__plugin_process_dict[plugin.id] = process
 
@@ -217,63 +230,16 @@ class PluginManager(OpaqueCoroutine):
 
             process = self.__plugin_process_dict.get(plugin.id)
             if process is not None:
-                process.restart(plugin)
-
-    def __receive_plugin_queue_loop(self):
-        try:
-            while self.__is_running:
-                try:
-                    data = self.__receive_plugin_queue.get()
-                    if self.__send_queue is not None and self.__is_running:
-                        # self.__logger.info("send queue:{}".format(data))
-                        asyncio.run_coroutine_threadsafe(
-                            self.__send_queue.put(data), self.__loop)
-                except Exception as e:
-                    self.__logger.error(e)
-                finally:
-                    if self.__receive_plugin_queue.qsize() > 0:
-                        self.__receive_plugin_queue.task_done()
-        finally:
-            self.__receive_plugin_queue.close()
-            self.__receive_plugin_queue.join_thread()
-
-    async def __receive_loop(self):
-        try:
-            while True:
-                try:
-                    data = await self.__receive_queue.get()
-                    plugin_name = data.get('webPackageName')
-                    plugin_id = f'package.{plugin_name}'
-                    process = self.__plugin_process_dict.get(plugin_id)
-                    if process:
-                        process.send_data(data)
-                except Exception as e:
-                    self.__logger.error(e)
-                finally:
-                    if self.__receive_queue.qsize() > 0:
-                        self.__receive_queue.task_done()
-        except asyncio.CancelledError:
-            pass
-        finally:
-            pass
-
-    @property
-    def receive_queue(self):
-        return self.__receive_queue
-
-    def set_send_queue(self, queue: asyncio.Queue):
-        self.__send_queue = queue
-
+                process.shutdown()
+                process = PluginProcess(
+                    plugin=plugin,
+                    receive_queue=self.__receive_plugin_queue,
+                    loop=self.__loop
+                )
+                self.__plugin_process_dict[plugin.id] = process
+                process.start()
+                
     # API
-    def emit_system_event(self, plugin_id, event):
-        data = {
-            'operation': 'system_event',
-            'event': event
-        }
-        process = self.__plugin_process_dict.get(plugin_id)
-        if process:
-            process.send_data(data)
-
     def get_plugins(self) -> List:
         plugins = []
         for plugin in self.__plugin_dict.values():
@@ -281,7 +247,6 @@ class PluginManager(OpaqueCoroutine):
         return sorted(plugins)
 
     def get_plugin(self, plugin_id: str) -> Optional[Plugin]:
-
         plugin = self.__plugin_dict.get(plugin_id)
         if plugin:
             return plugin._asdict()
@@ -289,13 +254,20 @@ class PluginManager(OpaqueCoroutine):
             return None
 
     def enable_plugin(self, plugin_id: str):
-
-        table = self.__db.db('ros2web').table('plugin')
-        process = self.__plugin_process_dict.get(plugin_id)
-        if process is not None:
-            plugin = self.__plugin_dict[plugin_id]
-
-            process.start()
+        plugin = self.__plugin_dict[plugin_id]
+        if plugin.disable:
+            table = self.__db.db('ros2web').table('plugin')
+            process = self.__plugin_process_dict.get(plugin_id)
+            
+            if process.is_running is False:
+                process = PluginProcess(
+                    plugin=plugin,
+                    receive_queue=self.__receive_plugin_queue,
+                    loop=self.__loop
+                )
+                self.__plugin_process_dict[plugin.id] = process
+                process.start()
+            
             plugin = plugin._replace(disable=False)
             self.__plugin_dict[plugin_id] = plugin
             self.__db.upsert(table, {
@@ -308,19 +280,20 @@ class PluginManager(OpaqueCoroutine):
             return None
 
     def disable_plugin(self, plugin_id: str):
-        table = self.__db.db('ros2web').table('plugin')
-        process = self.__plugin_process_dict.get(plugin_id)
-        if process is not None:
-            plugin = self.__plugin_dict[plugin_id]
-
-            process.shutdown()
+        plugin = self.__plugin_dict[plugin_id]
+        if plugin.disable is False:
+            table = self.__db.db('ros2web').table('plugin')
+            process = self.__plugin_process_dict.get(plugin_id)
+            if process.is_running:
+                process.shutdown()
+            
             plugin = plugin._replace(disable=True)
             self.__plugin_dict[plugin_id] = plugin
             self.__db.upsert(table, {
                 'id': plugin_id,
                 'disable': True
             }, {'id': plugin_id})
-
+            
             return plugin._asdict()
         else:
             return None

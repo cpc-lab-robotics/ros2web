@@ -8,6 +8,7 @@ import Box from "@mui/material/Box";
 
 import Button from "@/components/Button";
 import List, { ItemData } from "@/components/List";
+import ButtonGroup from "@/components/ButtonGroup";
 
 const items: ItemData[] = Array(10)
   .fill(0)
@@ -79,6 +80,18 @@ const App = () => (
       <Grid item xs={4}>
         <Item height={300} elevation={1}>
           <List items={items} />
+        </Item>
+      </Grid>
+      <Grid item xs={4}>
+        <Item height={300} elevation={1}>
+          <ButtonGroup
+            variant="text"
+            disable_elevation={true}
+            orientation="vertical"
+            color="secondary"
+            size="small"
+            labels={["label1", "label2", "label2"]}
+          />
         </Item>
       </Grid>
     </Grid>
